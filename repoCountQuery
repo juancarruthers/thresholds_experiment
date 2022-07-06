@@ -1,0 +1,9 @@
+{
+  search(
+    query: "is:public, language:java, archived:false, mirror:false, stars:1000..20000, size:>=10000, forks:>=10"
+    type: REPOSITORY
+    first: 1
+  ) {
+    repositoryCount
+  }
+}

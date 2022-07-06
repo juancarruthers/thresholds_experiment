@@ -1,0 +1,56 @@
+query($first: Int!, $cursor: String){
+  search(
+    first: $first
+    after: $cursor
+    query: "is:public, language:java, archived:false, mirror:false, size:>=10000, forks:>=10, created:<=2021-07-06"
+    type: REPOSITORY
+  ) {
+    repositoryCount
+    edges {
+      cursor
+      node {
+        ... on Repository {
+          id
+          name
+          stargazerCount
+          url
+          isPrivate
+          isArchived
+          isMirror
+          forkCount
+          createdAt
+          owner {
+            login
+          }
+          languages(orderBy: {direction: DESC, field: SIZE}, first: 1) {
+            edges {
+              node {
+                name
+              }
+              size
+            }
+            totalSize
+          }
+          defaultBranchRef {
+            target {
+              ... on Commit {
+                history(first: 1) {
+                  totalCount
+                  nodes {
+                    committedDate
+                  }
+                }
+              }
+            }
+          }
+          issues(states: CLOSED, last: 1) {
+            totalCount
+          }
+          pullRequests(states: CLOSED) {
+            totalCount
+          }
+        }
+      }
+    }
+  }
+}
