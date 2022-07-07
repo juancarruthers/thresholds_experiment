@@ -1,11 +1,15 @@
-query($first: Int!, $cursor: String){
+query($first: Int!, $cursor: String, $query: String!){
   search(
     first: $first
     after: $cursor
-    query: "is:public, language:java, archived:false, mirror:false, size:>=10000, forks:>=10, created:<=2021-07-06"
+    query: $query
     type: REPOSITORY
   ) {
     repositoryCount
+    pageInfo {
+      endCursor
+      hasNextPage
+    }
     edges {
       cursor
       node {

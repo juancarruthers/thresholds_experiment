@@ -1,31 +1,61 @@
 import requests
 import json
 import pandas as pd
+import datetime
 
 def main():
-    repoCountQuery = {'query': readFile("repoCountQuery")}
+    queryVar = {'query': "is:public, language:java, archived:false, mirror:false, forks:>=10, created:<=2021-07-06, size:>=10000"}
+    repoCountQuery = {'query': readFile("repoCountQuery"), 'variables': queryVar}
     token = readFile("token")
-
     repoCount = makeRequests(repoCountQuery, token)['data']['search']['repositoryCount']
 
-    variables = {'first': 1, 'cursor': None}
-    df_data = []
-    for i in range(repoCount):
+    if repoCount > 0:
+        df_data = []
+        i = 1
+        startSize = 10000
+        sizeInc = 1000
 
-        repoQuery = {'query': readFile("query"), 'variables': variables}
-        jsonResponse = makeRequests(repoQuery, token)
-        repoProperties = jsonResponse['data']['search']['edges']
-        if len(repoProperties) != 0:
-            cursor = repoProperties[0]['cursor']
-            print(str(i) + ": Cursor:" + cursor + ", Owner: " + repoProperties[0]['node']['owner'][
-                'login'] + ", RepoName: " + repoProperties[0]['node']['name'])
-            df_data.append(replaceNestedValues(repoProperties[0]['node']))
-            variables = {'first': 1, 'cursor': cursor}
-        else:
-            break
+        while repoCount > 0:
 
-    df = pd.DataFrame(df_data)
-    df.to_csv("dataset2.csv")
+            queryVar = {'query': "is:public, language:java, archived:false, mirror:false, forks:>=10, created:<=2021-07-06, size:" + str(startSize) + ".." + str(startSize + sizeInc)}
+            repoCountQuery = {'query': readFile("repoCountQuery"), 'variables': queryVar}
+            repoCountSubQuery = makeRequests(repoCountQuery, token)['data']['search']['repositoryCount']
+
+            while repoCountSubQuery > 1000:
+                sizeInc -= 100
+                queryVar = {'query': "is:public, language:java, archived:false, mirror:false, forks:>=10, created:<=2021-07-06, size:" + str(startSize) + ".." + str(startSize + sizeInc)}
+                repoCountQuery = {'query': readFile("repoCountQuery"), 'variables': queryVar}
+                repoCountSubQuery = makeRequests(repoCountQuery, token)['data']['search']['repositoryCount']
+
+            while repoCountSubQuery == 0:
+                sizeInc += 100
+                queryVar = {'query': "is:public, language:java, archived:false, mirror:false, forks:>=10, created:<=2021-07-06, size:" + str(startSize) + ".." + str(startSize + sizeInc)}
+                repoCountQuery = {'query': readFile("repoCountQuery"), 'variables': queryVar}
+                repoCountSubQuery = makeRequests(repoCountQuery, token)['data']['search']['repositoryCount']
+
+            repoCount -= repoCountSubQuery
+            cursor = None
+            hasNextPage = True
+
+            while hasNextPage:
+                variables = {'first': 30, 'cursor': cursor, 'query': "is:public, language:java, archived:false, mirror:false, forks:>=10, created:<=2021-07-06, size:"+ str(startSize) + ".." + str(startSize + sizeInc)}
+                repoQuery = {'query': readFile("query"), 'variables': variables}
+                jsonResponse = makeRequests(repoQuery, token)
+                repositories = jsonResponse['data']['search']
+                for repoProperties in repositories['edges']:
+                    print(str(datetime.datetime.now()) + " - N: " + str(i) +", Cursor:" + repoProperties['cursor'] + ", Owner: " + repoProperties['node']['owner'][
+                        'login'] + ", RepoName: " + repoProperties['node']['name'])
+                    df_data.append(replaceNestedValues(repoProperties['node']))
+                    i += 1
+
+                hasNextPage = repositories['pageInfo']['hasNextPage']
+                if hasNextPage:
+                    cursor = repositories['pageInfo']['endCursor']
+
+            startSize += sizeInc
+
+        df = pd.DataFrame(df_data)
+        df.to_csv("dataset2.csv")
 
 
 def replaceNestedValues(json):
@@ -38,7 +68,10 @@ def replaceNestedValues(json):
 
 
 def getLanguage(json):
-    newJson = {"primaryLanguage": json['languages']['edges'][0]['node']['name'], "totalSize": json['languages']['totalSize']}
+    if json['languages']['totalSize'] > 0:
+        newJson = {"primaryLanguage": json['languages']['edges'][0]['node']['name'], "totalSize": json['languages']['totalSize']}
+    else:
+        newJson = {"primaryLanguage": "-", "totalSize": 0}
     json.pop('languages', None)
     json.update(newJson)
     return json
@@ -84,8 +117,11 @@ def getContributors(response, owner, repoName):
 def makeRequests (query: str, token: str):
     url = 'https://api.github.com/graphql'
     headers = {'Authorization': 'Bearer ' + token}
-    req = requests.post(url, json=query, headers=headers)
-    return json.loads(req.text)
+    jsonReq = json.loads(requests.post(url, json=query, headers=headers).text)
+    if not (jsonReq.get("error") is None):
+        jsonReq = json.loads(requests.post(url, json=query, headers=headers).text)
+
+    return jsonReq
 
 
 def readFile(fileName: str):
