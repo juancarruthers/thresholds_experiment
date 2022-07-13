@@ -2,6 +2,7 @@ from statistics import stdev
 from math import log10
 import pandas as pd
 import numpy
+import random
 
 def _numericDimensionSimilaritySD(projectSample, projectsPopulation):
     stddev = stdev(projectsPopulation)
@@ -63,6 +64,7 @@ def scoreProjects (sample, population, dimensions: list[str], configuration=[]):
     return score, dimScore
 
 def _organizePopulationGroups(population, dimensions: list[str], configuration=[]):
+    #Mejorar rendimiento utilizando ndarrays en vez de Dataframe
     dimensionCount = len(dimensions)
     groups = []
     projectsClustered = 0
@@ -79,30 +81,42 @@ def _organizePopulationGroups(population, dimensions: list[str], configuration=[
             projectIndexSet = projectIndexSet & similarityScore
 
         quantity = 0
-        #similarProjects = []
         i=0
+        similarProjects = []
         for index, project in population.iterrows():
             similar = projectIndexSet.T.iloc[i][0]
             if similar:
                 quantity += 1
-                #test = population.loc[index]
-                #test2 = population.loc[i]
-                row = pd.concat([pd.DataFrame(data={'groupId': groupId}, index=['groupId']), population.loc[index]])
-                groups.append(row)
+                #row = pd.concat([pd.DataFrame(data={'groupId': groupId}, index=['groupId']), population.loc[index]])
+                #groups.append(row)
+                similarProjects.append(population.loc[index])
                 population = population.drop(index)
             i += 1
+        groups.append({'groupId': groupId, 'groupQty': quantity, 'similarProjects': similarProjects})
         projectsClustered += quantity
-        #groups.append({'groupId': groupId, 'groupQty': quantity})
         groupId += 1
 
     return groups
 
+def createStratifiedSample(population, dimensions: list[str], sampleSize=0.2, configuration=[]):
+    groups = _organizePopulationGroups(population, dimensions)
+    sample = []
+    for group in groups:
+        qty = round(group['groupQty'] * sampleSize)
+        if qty == 0:
+            qty = 1
+        groupSample = random.sample(group['similarProjects'], qty)
+        sample = sample + groupSample
+
+    df = pd.DataFrame(sample)
+    df.to_csv("./datasets/Larger/stratified2.csv")
+
 
 if __name__ == '__main__':
-    #score = scoreProjects(pd.read_csv("./datasets/Larger/stratified.csv"), pd.read_csv("./datasets/Larger/frameEngin.csv"), ['stargazerCount', 'forkCount', 'issues', 'totalSize', 'pullReqCount', 'commits'])
+    #score = scoreProjects(pd.read_csv("./datasets/Larger/stratified2.csv"), pd.read_csv("./datasets/Larger/frameEngin.csv"), ['stargazerCount', 'forkCount', 'issues', 'totalSize', 'pullReqCount', 'commits'])
     #print(score[0]*831)
     #score[2].to_csv("./datasets/Larger/test2.csv")
-    groups = _organizePopulationGroups(pd.read_csv("./datasets/Larger/frameEngin.csv"), ['stargazerCount', 'forkCount', 'issues', 'totalSize', 'pullReqCount', 'commits'])
+    createStratifiedSample(pd.read_csv("./datasets/Larger/frameEngin.csv"), ['stargazerCount', 'forkCount', 'issues', 'totalSize', 'pullReqCount', 'commits'], 0.3)
     # CREAR FUNCION PARA GENERAR MUESTRA ESTRATIFICADA
 '''
 score.projects < - function(sample, universe, space, configuration=NA)
