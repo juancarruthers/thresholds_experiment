@@ -108,10 +108,11 @@ def getContributors(response, token, owner, repoName):
     req = json.loads(requests.get(url + str(i), headers=headers).text)
 
     while len(req) > 0:
-        while not (type(req) is list):
-            time.sleep(600)
-            req = json.loads(requests.get(url + str(i), headers=headers).text)
-        acum += len(req)
+        if type(req) is list:
+            acum += len(req)
+            i += 1
+        else:
+            time.sleep(300)
         req = json.loads(requests.get(url + str(i), headers=headers).text)
 
     response.pop('owner', None)
@@ -138,6 +139,8 @@ def readFile(fileName: str):
 
     return query
 
+''' Dataset con contributors
+
 
 def getContributorsTest():
     df_data = []
@@ -163,6 +166,5 @@ def getContributorsTest():
         df_data.append({"contributors": acum})
     df = pd.DataFrame(df_data)
     df.to_csv("largerFrame.csv")
+'''
 
-
-getContributorsTest()

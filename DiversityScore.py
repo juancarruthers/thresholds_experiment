@@ -1,176 +1,144 @@
-from statistics import stdev
-from math import log10
+import statistics as st
+import math
+import numpy as np
 import pandas as pd
-import numpy
-import random
 
-def _numericDimensionSimilaritySD(projectSample, projectsPopulation):
-    stddev = stdev(projectsPopulation)
+def _numericDimensionSimilaritySD(projectSample, projectsPopulation: np.array) -> list[bool]:
+    stddev = st.stdev(projectsPopulation)
     lower = projectSample - stddev
     upper = projectSample + stddev
-    similarityScore = pd.DataFrame()
-    for project in projectsPopulation:
-        similarityScore.append(lower <= project <= upper)
-    return similarityScore
-
-def _numericDimensionSimilarity(projectSample, projectsPopulation):
-    lower = pow(10, log10(projectSample + 1) - 0.5) - 1
-    upper = pow(10, log10(projectSample + 1) + 0.5) - 1
     similarityScore = []
     for project in projectsPopulation:
         similarityScore.append(lower <= project <= upper)
     return similarityScore
 
-def _factorDimensionSimilarity(projectSample, projectsPopulation):
-    similarityScore = pd.DataFrame()
+def _numericDimensionSimilarity(projectSample, projectsPopulation: np.array)-> list[bool]:
+    lower = pow(10, math.log10(projectSample + 1) - 0.5) - 1
+    upper = pow(10, math.log10(projectSample + 1) + 0.5) - 1
+    similarityScore = []
+    for project in projectsPopulation:
+        similarityScore.append(lower <= project <= upper)
+    return similarityScore
+
+def _factorDimensionSimilarity(projectSample, projectsPopulation: np.array)-> list[bool]:
+    similarityScore = []
     for project in projectsPopulation:
         similarityScore.append(projectSample == project)
     return similarityScore
 
+def _similarityScore(projectDimValue, populationDimValues: np.array, configuration)-> list[bool]:
+    valueType = type(projectDimValue)
+    similarityScore: list[bool]
 
-def scoreProjects (sample, population, dimensions: list[str], configuration=[]):
+    if not (configuration is None):
+        similarityScore = configuration(projectDimValue,  populationDimValues)
+    elif valueType == int or valueType == float:
+        similarityScore = _numericDimensionSimilarity(projectDimValue,  populationDimValues)
+    elif valueType == str:
+        similarityScore = _factorDimensionSimilarity(projectDimValue,  populationDimValues)
+
+    return similarityScore
+
+def diversityScore (sample: pd.DataFrame, population: pd.DataFrame, dimensions: list[str], configuration=[]) -> tuple[float, list[float], np.ndarray]:
 
     #Validar que las cabeceras de las dimensiones sean iguales que a los datasets
+    dimensionsKeysPop = []
+    dimensionsKeysSam = []
+    for dimension in dimensions:
+        if not(dimension in population.columns and dimension in sample.columns):
+            print('Population or sample dataset does not have', dimension, "variable")
+            exit()
+        dimensionsKeysSam.append(sample.columns.get_loc(dimension))
+        dimensionsKeysPop.append(population.columns.get_loc(dimension))
 
-    projPopCount = len(population[dimensions[0]])
-    projSamCount = len(sample[dimensions[0]])
+    sampleArray = sample.to_numpy()
+    populationArray = population.to_numpy()
+    projPopCount = populationArray[:, 0].size
+    projSamCount = sampleArray[:, 0].size
     dimensionCount = len(dimensions)
-    dimIndexMatrix = pd.DataFrame(numpy.full((dimensionCount, projPopCount), False))
-    indexSet = pd.DataFrame(numpy.full((1, projPopCount), False))
+
+    dimIndexMatrix = np.full((dimensionCount, projPopCount), False)
+    indexSet = np.full((1, projPopCount), False)[0]
 
     if projSamCount > 0:
-        for index, project in sample.iterrows():
-            projectIndexSet = pd.DataFrame(numpy.full((1, projPopCount), True))
+        for project in sampleArray:
+            projectIndexSet = np.full((1, projPopCount), True)[0]
 
-            for dimKey in range(dimensionCount):
-                dimValue = dimensions[dimKey]
-                #Agregar calculo de similaridad por tipo de variable
-                similarityScore = _numericDimensionSimilarity(project[dimValue], population[dimValue])
+            for i in range(dimensionCount):
 
+                confDim = None
+                if len(configuration) != 0:
+                    confDim = configuration[i]
+                similarityScore = _similarityScore(project[dimensionsKeysSam[i]], populationArray[:, dimensionsKeysPop[i]], confDim)
 
-                dimIndexMatrix.loc[dimKey] = dimIndexMatrix.loc[dimKey] | similarityScore
+                dimIndexMatrix[i, :] = dimIndexMatrix[i, :] | similarityScore
                 projectIndexSet = projectIndexSet & similarityScore
 
             indexSet = indexSet | projectIndexSet
 
-    score = indexSet.T.groupby(0).size().to_dict()[True]/projPopCount
+    score = np.bincount(indexSet)[1]/projPopCount
 
-    dimIndexMatrixTranp = dimIndexMatrix.T
     dimScore = []
-    for dim in range(dimensionCount):
-        dimensionSimilarity = dimIndexMatrixTranp[dim].to_frame()
-        dimScore.append(dimensionSimilarity.groupby(dim).size().to_dict()[True]/projPopCount)
+    for i in range(dimensionCount):
+        dimScore.append(np.bincount(dimIndexMatrix[i])[1]/projPopCount)
 
-    return score, dimScore
+    return score, dimScore, indexSet
 
-def _organizePopulationGroups(population, dimensions: list[str], configuration=[]):
-    #Mejorar rendimiento utilizando ndarrays en vez de Dataframe
-    dimensionCount = len(dimensions)
+def clusterizePopulation(population: pd.DataFrame, dimensions: list[str], configuration=[]) -> list:
+    dimensionsKeys = []
+    for dimension in dimensions:
+        if not(dimension in population.columns):
+            print('Population dataset does not have', dimension, "variable")
+            exit()
+        dimKey = population.columns.get_loc(dimension)
+        dimensionsKeys.append(dimKey)
+
+    populationSorted = getProjectsScoreSorted(population, dimensions, configuration).drop(columns=['diversityScore', 'similarityMatrix'])
+    populationArray = populationSorted.to_numpy()
     groups = []
-    projectsClustered = 0
     groupId = 1
 
-    while len(population[dimensions[0]]) != 0:
-        projectIndexSet = pd.DataFrame(numpy.full((1, len(population[dimensions[0]])), True))
+    while populationArray[:, 0].size != 0:
+        projectIndexSet = np.full((1, populationArray[:, 0].size), True)[0]
+        i = 0
+        for dimKey in dimensionsKeys:
+            confDim = None
+            if len(configuration) != 0:
+                confDim = configuration[i]
+            similarityScore = _similarityScore(populationArray[0, dimKey], populationArray[:, dimKey], confDim)
 
-        for dimKey in range(dimensionCount):
-            dimValue = dimensions[dimKey]
-            # Agregar calculo de similaridad por tipo de variable
-            similarityScore = _numericDimensionSimilarity(population[dimValue].iloc[0], population[dimValue])
-
+            i += 1
             projectIndexSet = projectIndexSet & similarityScore
 
         quantity = 0
-        i=0
+        j = 0
         similarProjects = []
-        for index, project in population.iterrows():
-            similar = projectIndexSet.T.iloc[i][0]
+        while j < populationArray[:, 0].size:
+            similar = projectIndexSet[j]
             if similar:
+                similarProjects.append(populationArray[j, :])
                 quantity += 1
-                #row = pd.concat([pd.DataFrame(data={'groupId': groupId}, index=['groupId']), population.loc[index]])
-                #groups.append(row)
-                similarProjects.append(population.loc[index])
-                population = population.drop(index)
-            i += 1
+                populationArray = np.delete(populationArray, j, 0)
+                projectIndexSet = np.delete(projectIndexSet, j, 0)
+            else:
+                j += 1
         groups.append({'groupId': groupId, 'groupQty': quantity, 'similarProjects': similarProjects})
-        projectsClustered += quantity
         groupId += 1
 
     return groups
 
-def createStratifiedSample(population, dimensions: list[str], sampleSize=0.2, configuration=[]):
-    groups = _organizePopulationGroups(population, dimensions)
-    sample = []
-    for group in groups:
-        qty = round(group['groupQty'] * sampleSize)
-        if qty == 0:
-            qty = 1
-        groupSample = random.sample(group['similarProjects'], qty)
-        sample = sample + groupSample
+# If you set the sample argument, it will calculate scores of the projects in the sample
+def getProjectsScoreSorted(population: pd.DataFrame, dimensions: list[str], configuration=[], sample=pd.DataFrame()) -> pd.DataFrame:
+    score: pd.DataFrame
+    if sample.shape[0] == 0:
+        scores = population.copy()
+    else:
+        scores = sample.copy()
 
-    df = pd.DataFrame(sample)
-    df.to_csv("./datasets/Larger/stratified2.csv")
+    for i in range(scores.shape[0]):
+        project = population.loc[[i]]
+        projectScore = diversityScore(project, population, dimensions, configuration)
+        scores.at[i, 'diversityScore'] = projectScore[0]
+        scores.at[i, 'similarityMatrix'] = projectScore[2]
 
-
-if __name__ == '__main__':
-    #score = scoreProjects(pd.read_csv("./datasets/Larger/stratified2.csv"), pd.read_csv("./datasets/Larger/frameEngin.csv"), ['stargazerCount', 'forkCount', 'issues', 'totalSize', 'pullReqCount', 'commits'])
-    #print(score[0]*831)
-    #score[2].to_csv("./datasets/Larger/test2.csv")
-    createStratifiedSample(pd.read_csv("./datasets/Larger/frameEngin.csv"), ['stargazerCount', 'forkCount', 'issues', 'totalSize', 'pullReqCount', 'commits'], 0.3)
-    # CREAR FUNCION PARA GENERAR MUESTRA ESTRATIFICADA
-'''
-score.projects < - function(sample, universe, space, configuration=NA)
-{
-    variables < - all.vars(space)
-
-    if (length(setdiff(variables, names(sample))) > 0)
-stop(gettextf("variables '%s' not found in sample", paste(setdiff(variables, names(sample)), collapse=", ")), domain=NA)
-
-if (length(setdiff(variables, names(universe))) > 0)
-stop(gettextf("variables '%s' not found in universe", paste(setdiff(variables, names(universe)), collapse=", ")),
-     domain=NA)
-
-project_var < - variables[1]
-dimension_vars < - variables[-1]
-
-dim_index_matrix < - matrix(rep(F, length=length(dimension_vars) * nrow(universe)),
-                            nrow=length(dimension_vars), ncol=nrow(universe), byrow=T)
-index_set < - rep(F, length=nrow(universe))
-
-if (nrow(sample) > 0)
-for (pid in 1:nrow(sample)) {
-project_index_set < - rep(T, length=nrow(universe))
-
-for (dim in 1:length(dimension_vars)) {
-    dimension < - dimension_vars[dim]
-
-    if (dim <= length(configuration) & ! is.na(configuration[dim])) {
-                                                                    is.similar < - configuration[[dim]](
-    sample[pid, dimension], universe[, dimension])
-d < - is.similar(universe[, dimension])
-}
-else if (is.numeric(universe[, dimension])) {
-is.similar < - create.numeric.similarity(sample[pid, dimension], universe[, dimension])
-d < - is.similar(universe[, dimension])
-}
-else if ( is.factor(universe[, dimension])) {
-is.similar < - create.factor.similarity(sample[pid, dimension], universe[, dimension])
-d < - is.similar(universe[, dimension])
-}
-else {
-stop(gettextf("no similarity function defined for '%s'", dimension, domain = NA))
-}
-
-dim_index_matrix[dim, ] < - dim_index_matrix[dim, ] | d
-project_index_set < - project_index_set & d
-}
-index_set < - index_set | project_index_set
-}
-
-score < - sum(index_set, na.rm=T) / length(index_set)
-dimension_score < - apply(dim_index_matrix, 1, function(x) {sum(x, na.rm=T) / length(x)})
-return (list(dimensions=dimension_vars,
-             score=score, dimension.score=dimension_score,
-        score.indexset=index_set, dimension.indexset=dim_index_matrix))
-}
-'''
+    return scores.sort_values(by=['diversityScore'], ascending=False)
