@@ -3,14 +3,15 @@ import numpy as np
 import scipy.stats as sp
 import statsmodels.distributions.empirical_distribution as stMod
 import random as rd
-from DiversityScore import clusterizePopulation, diversityScore, getProjectsScoreSorted
+from DiversityScore import DiversityScore
 
 def createSimpleRandomSample(dataset: pd.DataFrame, proportion=0.2) -> pd.DataFrame:
     sample = dataset.sample(int(len(dataset) * proportion))
     return sample
 
 def createStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], proportion=0.2, configuration=[]) -> pd.DataFrame:
-    groups = clusterizePopulation(dataset, dimensions, configuration)
+    clusterizer = DiversityScore(dataset, dimensions, configuration)
+    groups = clusterizer.clusterizePopulation()
     sample = []
     for group in groups:
         qty = round(group['groupQty'] * proportion)
@@ -26,7 +27,8 @@ def createStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], proport
 
 
 def createDiverseSample(dataset: pd.DataFrame, dimensions: list[str], configuration=[], sample=pd.DataFrame()) -> pd.DataFrame:
-    projectScores = getProjectsScoreSorted(dataset, dimensions, configuration)
+    diversityScore = DiversityScore(dataset, dimensions, configuration)
+    projectScores = diversityScore.scoreProjectsSorted()
     diversityScoreCol = projectScores.columns.get_loc('diversityScore')
     similarityMatrixCol = projectScores.columns.get_loc('similarityMatrix')
     populationArray = projectScores.to_numpy()
@@ -37,11 +39,11 @@ def createDiverseSample(dataset: pd.DataFrame, dimensions: list[str], configurat
     sampleArray = [populationArray[0, :]]
 
     if sample.shape[0] > 0:
-        sampleScore = diversityScore(sample, dataset, dimensions, configuration)
+        sampleScore = diversityScore.scoreSample(sample)
         populationCovered = sampleScore[2]
         sampleScore = sampleScore[0]
         sampleArray = []
-        for index, project in getProjectsScoreSorted(dataset, dimensions, configuration, sample).iterrows():
+        for index, project in diversityScore.scoreProjectsSorted(sample).iterrows():
             sampleArray.append(project.to_numpy())
 
 
@@ -64,7 +66,8 @@ def createDiverseSample(dataset: pd.DataFrame, dimensions: list[str], configurat
     return df
 
 def testSampleDiversityRepresentativeness(sample: pd.DataFrame, population: pd.DataFrame, variables: list[str], sigLevel=0.05) -> tuple[tuple[float, list[float], np.ndarray], tuple[[dict], [dict]]]:
-    dScore = diversityScore(sample, population, variables)
+    diversityScore = DiversityScore(population, variables)
+    dScore = diversityScore.scoreSample(sample)
     rScore = testSampleKS(sample, population, variables, sigLevel)
 
     return dScore, rScore
@@ -86,10 +89,15 @@ if __name__ == '__main__':
     dimensions = ['stargazerCount', 'forkCount', 'issues', 'totalSize', 'pullReqCount', 'commits']
     samples = []
 
+    '''
     simpleRandom = createSimpleRandomSample(frame)
     stratified = createStratifiedSample(frame, dimensions)
     diverse = createDiverseSample(frame, dimensions)
+    '''
 
+    simpleRandom = pd.read_csv("./datasets/Larger/Simple Random.csv")
+    stratified = pd.read_csv("./datasets/Larger/Stratified.csv")
+    diverse = pd.read_csv("./datasets/Larger/Diversity.csv")
 
     samples.append({'sampStrat': 'Simple Random', 'sample': simpleRandom})
     samples.append({'sampStrat': 'Stratified', 'sample': stratified})
@@ -100,6 +108,9 @@ if __name__ == '__main__':
         dScore = dScore[0]
         nullHypRej = len(rScore[1])
         print('Sampling Strategy:', sample['sampStrat'], ' -Diversity Score:', dScore, ' -Null Hypotesis Rejected:', nullHypRej)
+        sample['sample'].to_csv("./datasets/Larger/" + sample['sampStrat'] + ".csv")
+
+
 
     # Completar cobertura muestreo estratificado
     stratDiversified = createDiverseSample(frame, dimensions, sample=stratified)
