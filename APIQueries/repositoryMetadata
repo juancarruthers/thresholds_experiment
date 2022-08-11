@@ -47,10 +47,10 @@ query($first: Int!, $cursor: String, $query: String!){
               }
             }
           }
-          issues(states: CLOSED, last: 1) {
+          issues(last: 1) {
             totalCount
           }
-          pullRequests(states: CLOSED) {
+          pullRequests(last: 1) {
             totalCount
           }
         }

@@ -1,0 +1,10 @@
+query($owner: String!, $repoName: String!){
+  repository(owner: $owner, name: $repoName) {
+    issues(last: 1, states: CLOSED) {
+      nodes {
+        createdAt
+      }
+      totalCount
+    }
+  }
+}

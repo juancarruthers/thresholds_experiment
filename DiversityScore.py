@@ -5,6 +5,7 @@ import pandas as pd
 
 class DiversityScore:
 
+    # GUARDAR INDICES DE CADA DIMENSION, Y EL ARREGLO DE LA POBLACION NO EL DATAFRAME
     def __init__(self, population: pd.DataFrame, dimensions: list[str], configuration=[]):
         for dimension in dimensions:
             if not(dimension in population.columns):
@@ -102,7 +103,6 @@ class DiversityScore:
 
         return score, dimScore, indexSet
 
-    #RETOCAR LA CLUSTERIZACION, recibir muestra diversa y completar desde alli los grupos
     def clusterizePopulation(self, diverseSample: np.array, population: np.array) -> tuple[list, np.array]:
         dimensionsKeys = []
         for dimension in self.dimensions:
