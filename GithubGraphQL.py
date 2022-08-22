@@ -81,7 +81,7 @@ class GithubGraphQL:
             difference = finish - start
             print('Start:', start, '- Finish:', datetime.datetime.now(), " -  Time:", difference)
             df = pd.DataFrame(self._df_data)
-            df.to_csv("./datasets/githubquery" + str(finish.month) + str(finish.year) + ".csv")
+            df.to_csv("./datasets/githubquery" + str(finish.month) + str(finish.year) + ".csv", index=False)
             shutil.rmtree('./.backup')
 
 
@@ -234,6 +234,17 @@ class GithubGraphQL:
         queryState = pd.DataFrame([{'startSize': startSize, 'sizeInc': sizeInc}])
         queryState.to_csv(path + "/queryState.csv", index=False)
 
+    def filterProjects(self, path, totalSize, dateLastCommit, contributors, closedIssues, closedPullReq):
+        dataset = pd.read_csv(path, encoding='unicode_escape')
+        dataset = dataset.drop_duplicates(subset=['url'])
+        dataset = dataset[dataset['totalSize'] >= totalSize]
+        dataset = dataset[dataset['dateLastCommit'] >= dateLastCommit]
+        dataset = dataset[dataset['contributors'] >= contributors]
+        dataset = dataset[dataset['closedIssuesCount'] >= closedIssues]
+        dataset = dataset[dataset['closedPullReqCount'] >= closedPullReq]
+        date = datetime.datetime.now()
+        dataset.to_csv("./datasets/filtered" + str(date.month) + str(date.year) + ".csv", index=False)
+
 if __name__ == '__main__':
     test = GithubGraphQL(5000)
-    test.main()
+    test.filterProjects('./datasets/githubquery82022.csv', 10000, '2022-06-01', 3, 50, 50)
