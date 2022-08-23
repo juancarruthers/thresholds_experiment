@@ -9,11 +9,11 @@ import concurrent.futures
 
 class GithubGraphQL:
 
-    def __init__(self, p_saveThreshold: int, p_itemsPageMainQuery = 30, p_itemsPageContrQuery = 100):
+    def __init__(self, p_saveThreshold: int, queryFilter: str, p_itemsPageMainQuery = 30, p_itemsPageContrQuery = 100):
         self._tokens = self._readFile("token").split(",\n")
         self._startSize, self._sizeInc, self._df_data = self._restoreCheckPoint()
         self._saveThreshold = p_saveThreshold
-        self._queryVar = "is:public, language:java, archived:false, mirror:false, forks:>=10, created:<=2021-07-06, size:"
+        self._queryVar = queryFilter + ", size:"
         self._queryFile = self._readFile("APIQueries/repositoryMetadata")
         self._repoCountQueryFile = self._readFile("APIQueries/repositoryCount")
         self._closeIssuesQuery = self._readFile("APIQueries/Issues/closedIssues")
@@ -24,68 +24,73 @@ class GithubGraphQL:
         self._elementPerPageMainQuery = p_itemsPageMainQuery
         self._elementPerPageContribQuery = str(p_itemsPageContrQuery)
         self._reqSleepTime = [50, 100, 150, 200, 250, 300]
+        self.quit = False
 
     def main(self):
-        start = datetime.datetime.now()
-        repoCountQuery = {'query': self._repoCountQueryFile, 'variables': {'query': self._queryVar + ">=" + str(self._startSize)}}
-        repoCount = self._makeRequest(repoCountQuery)['data']['search']['repositoryCount']
+        try:
+            start = datetime.datetime.now()
+            repoCountQuery = {'query': self._repoCountQueryFile, 'variables': {'query': self._queryVar + ">=" + str(self._startSize)}}
+            repoCount = self._makeRequest(repoCountQuery)['data']['search']['repositoryCount']
 
-        if repoCount > 0:
-            projectsSaved = 0
+            if repoCount > 0:
+                projectsSaved = 0
 
-            while repoCount > 0:
+                while repoCount > 0:
 
-                repoCountQuery = {'query': self._repoCountQueryFile, 'variables': {'query': self._queryVar + str(self._startSize) + ".." + str(self._startSize + self._sizeInc)}}
-                repoCountSubQuery = self._makeRequest(repoCountQuery)['data']['search']['repositoryCount']
-
-                j = 1
-                while (repoCountSubQuery >= 990) | (repoCountSubQuery == 0):
-                    if repoCountSubQuery >= 990:
-                        self._sizeInc -= j
-                    else:
-                        self._sizeInc += j
                     repoCountQuery = {'query': self._repoCountQueryFile, 'variables': {'query': self._queryVar + str(self._startSize) + ".." + str(self._startSize + self._sizeInc)}}
                     repoCountSubQuery = self._makeRequest(repoCountQuery)['data']['search']['repositoryCount']
-                    j += j
 
-                repoCount -= repoCountSubQuery
-                cursor = None
-                hasNextPage = True
+                    j = 1
+                    while (repoCountSubQuery >= 990) | (repoCountSubQuery == 0):
+                        if repoCountSubQuery >= 990:
+                            self._sizeInc -= j
+                        else:
+                            self._sizeInc += j
+                        repoCountQuery = {'query': self._repoCountQueryFile, 'variables': {'query': self._queryVar + str(self._startSize) + ".." + str(self._startSize + self._sizeInc)}}
+                        repoCountSubQuery = self._makeRequest(repoCountQuery)['data']['search']['repositoryCount']
+                        j += j
 
-                while hasNextPage:
-                    variables = {'first': self._elementPerPageMainQuery, 'cursor': cursor, 'query': self._queryVar + str(self._startSize) + ".." + str(self._startSize + self._sizeInc)}
-                    repoQuery = {'query': self._queryFile, 'variables': variables}
-                    jsonResponse = self._makeRequest(repoQuery)
-                    repositories = jsonResponse['data']['search']
+                    repoCount -= repoCountSubQuery
+                    cursor = None
+                    hasNextPage = True
 
-                    #CONCURRENCY
-                    executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
-                    futures = {executor.submit(self._replaceNestedPropertiesValues, repoProperties) for repoProperties in repositories['edges']}
-                    for future in concurrent.futures.as_completed(futures):
-                        repositoryProperties = future.result()
-                        self._df_data.append(repositoryProperties)
+                    while hasNextPage:
+                        variables = {'first': self._elementPerPageMainQuery, 'cursor': cursor, 'query': self._queryVar + str(self._startSize) + ".." + str(self._startSize + self._sizeInc)}
+                        repoQuery = {'query': self._queryFile, 'variables': variables}
+                        jsonResponse = self._makeRequest(repoQuery)
+                        repositories = jsonResponse['data']['search']
 
-                    hasNextPage = repositories['pageInfo']['hasNextPage']
-                    if hasNextPage:
-                        cursor = repositories['pageInfo']['endCursor']
+                        #CONCURRENCY
+                        executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+                        futures = {executor.submit(self._replaceNestedPropertiesValues, repoProperties) for repoProperties in repositories['edges']}
+                        for future in concurrent.futures.as_completed(futures):
+                            repositoryProperties = future.result()
+                            self._df_data.append(repositoryProperties)
 
-                projectsSaved += repoCountSubQuery
+                        hasNextPage = repositories['pageInfo']['hasNextPage']
+                        if hasNextPage:
+                            cursor = repositories['pageInfo']['endCursor']
 
-                if projectsSaved > self._saveThreshold:
-                    self._saveCheckPoint(self._startSize, self._sizeInc, self._df_data)
-                    projectsSaved = 0
+                    projectsSaved += repoCountSubQuery
 
-                self._startSize += self._sizeInc
+                    if projectsSaved > self._saveThreshold:
+                        self._saveCheckPoint(self._startSize, self._sizeInc, self._df_data)
+                        projectsSaved = 0
 
-            finish = datetime.datetime.now()
-            difference = finish - start
-            print('Start:', start, '- Finish:', datetime.datetime.now(), " -  Time:", difference)
-            df = pd.DataFrame(self._df_data)
-            df.to_csv("./datasets/githubquery" + str(finish.month) + str(finish.year) + ".csv", index=False)
-            shutil.rmtree('./.backup')
+                    self._startSize += self._sizeInc
 
+                finish = datetime.datetime.now()
+                difference = finish - start
+                print('Start:', start, '- Finish:', datetime.datetime.now(), " -  Time:", difference)
+                df = pd.DataFrame(self._df_data)
+                df.to_csv("./datasets/" + str(finish.year) + str(finish.month) + str(finish.day) + "/githubquery.csv", index=False)
+                shutil.rmtree('./.backup')
+        except KeyboardInterrupt:
+            self.quit = True
 
     def _replaceNestedPropertiesValues(self, repoProperties: dict) -> dict:
+        if not self.quit:
+
             properties = repoProperties['node']
             owner = properties['owner']['login']
             repositoryName = properties['name']
@@ -102,7 +107,7 @@ class GithubGraphQL:
             return properties
 
 
-    def _updateLanguage(self, json):
+    def _updateLanguage(self, json: dict):
         if json['languages']['totalSize'] > 0:
             newJson = {"primaryLanguage": json['languages']['edges'][0]['node']['name'], "totalSize": json['languages']['totalSize']}
         else:
@@ -110,12 +115,12 @@ class GithubGraphQL:
         json.pop('languages', None)
         json.update(newJson)
 
-    def _updateCommits(self, json):
+    def _updateCommits(self, json: dict):
         newJson = {"commits": json['defaultBranchRef']['target']['history']['totalCount'], "dateLastCommit": json['defaultBranchRef']['target']['history']['nodes'][0]['committedDate']}
         json.pop('defaultBranchRef', None)
         json.update(newJson)
 
-    def _updateIssues(self, json, owner, repoName):
+    def _updateIssues(self, json: dict, owner: str, repoName: str):
         if (json['issues']['totalCount'] > 0):
             states = {'closed': self._closeIssuesQuery, 'open': self._openIssuesQuery}
             newJson = {}
@@ -137,7 +142,7 @@ class GithubGraphQL:
     1)OBTENER CANTIDAD PULL REQUESTS CERRADAS DEL REPO NO MERGEADAS DE OTRO REPO
     2)FECHA ULTIMO PULL REQUEST
     '''
-    def _updatePullRequests(self, json, owner, repoName):
+    def _updatePullRequests(self, json: dict, owner: str, repoName: str):
         if (json['pullRequests']['totalCount'] > 0):
             states = {'closed': self._closePullReqQuery, 'merged': self._mergedPullReqQuery, 'open': self._openPullReqQuery}
             newJson = {}
@@ -155,7 +160,7 @@ class GithubGraphQL:
         json.pop('pullRequests', None)
         json.update(newJson)
 
-    def _updateContributors(self, json, owner, repoName):
+    def _updateContributors(self, json: dict, owner: str, repoName: str):
         url = "https://api.github.com/repos/" + owner + "/" + repoName + "/contributors?per_page="+ self._elementPerPageContribQuery +"&page="
         i = 1
         response = self._makeRequest("", "GET", url + str(i))
@@ -188,20 +193,24 @@ class GithubGraphQL:
 
     def _requestCondition (self, query: str | dict, reqType: str, url: str, headers: dict) -> tuple[dict, bool]:
         condition: bool
-
-        if reqType == "POST":
-            response = requests.post(url, json=query, headers=headers).json()
-            condition = response.get("errors", False)
-        else:
-            response = requests.get(url, headers=headers).json()
-            if not (type(response) is list):
-                message: str = response['message']
-                condition = message != 'The history or contributor list is too large to list contributors for this repository via the API.'
+        try:
+            if reqType == "POST":
+                response = requests.post(url, json=query, headers=headers, timeout=120).json()
+                condition = response.get("errors", False)
             else:
-               condition = not (type(response) is list)
+                response = requests.get(url, headers=headers, timeout=120).json()
+                if not (type(response) is list):
+                    message: str = response['message']
+                    condition = message != 'The history or contributor list is too large to list contributors for this repository via the API.'
+                else:
+                   condition = not (type(response) is list)
 
 
-        return response, condition
+            return response, condition
+        except BaseException as err:
+            self.quit = True
+            print(err)
+            exit()
 
 
     def _readFile(self, filePath: str) -> str:
@@ -224,7 +233,7 @@ class GithubGraphQL:
         else:
             return startSize, sizeInc, []
 
-    def _saveCheckPoint(self, startSize, sizeInc, dataset):
+    def _saveCheckPoint(self, startSize: int, sizeInc: int, dataset: list[dict]):
         path = "./.backup"
         if not (os.path.isdir(path)):
             os.mkdir(path)
@@ -234,17 +243,21 @@ class GithubGraphQL:
         queryState = pd.DataFrame([{'startSize': startSize, 'sizeInc': sizeInc}])
         queryState.to_csv(path + "/queryState.csv", index=False)
 
-    def filterProjects(self, path, totalSize, dateLastCommit, contributors, closedIssues, closedPullReq):
-        dataset = pd.read_csv(path, encoding='unicode_escape')
-        dataset = dataset.drop_duplicates(subset=['url'])
-        dataset = dataset[dataset['totalSize'] >= totalSize]
-        dataset = dataset[dataset['dateLastCommit'] >= dateLastCommit]
-        dataset = dataset[dataset['contributors'] >= contributors]
-        dataset = dataset[dataset['closedIssuesCount'] >= closedIssues]
-        dataset = dataset[dataset['closedPullReqCount'] >= closedPullReq]
-        date = datetime.datetime.now()
-        dataset.to_csv("./datasets/filtered" + str(date.month) + str(date.year) + ".csv", index=False)
+    def filterProjects(self, filePath: str, filters: dict):
+        if os.path.isfile(filePath):
+            dataset = pd.read_csv(filePath, encoding='unicode_escape')
+            dataset = dataset.drop_duplicates(subset=['url'])
+            for key, value in filters.items():
+                dataset = dataset[dataset[key] >= value]
+            today = datetime.datetime.now()
+            dataset.to_csv("./datasets/filtered" + str(today.year) + str(today.month) + str(today.day) + ".csv", index=False)
+        else:
+            print("Invalid path")
 
 if __name__ == '__main__':
-    test = GithubGraphQL(5000)
-    test.filterProjects('./datasets/githubquery82022.csv', 10000, '2022-06-01', 3, 50, 50)
+    #Github Graphql filter options without size
+    filter1 = "is:public, language:java, archived:false, mirror:false, forks:>=10, created:<=2021-07-06"
+    filter2 = {'totalSize': 10000, 'dateLastCommit': '2022-06-01', 'contributors': 3, 'closedIssuesCount': 50, 'closedPullReqCount': 50}
+    test = GithubGraphQL(5000, filter1)
+    #test.main()
+    test.filterProjects('./datasets/githubquery82022.csv', filter2)

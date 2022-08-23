@@ -105,8 +105,8 @@ def testSampleKS(sample: pd.DataFrame, population: pd.DataFrame, variables: list
     return variablesValues, varHypRejected
 
 if __name__ == '__main__':
-    frame = pd.read_csv("./datasets/Larger/frameEngin.csv")
-    dimensions = ['stargazerCount', 'forkCount', 'issues', 'totalSize', 'pullReqCount', 'commits']
+    frame = pd.read_csv("./datasets/filtered82022.csv")
+    dimensions = ['stargazerCount', 'forkCount', 'closedIssuesCount', 'totalSize', 'closedPullReqCount', 'commits']
     samples = []
 
 
@@ -147,7 +147,7 @@ if __name__ == '__main__':
                 break
 
     #print("--- %s seconds ---" % (time.time() - start_time))
-    stratified.to_csv("./datasets/Larger/Stratified.csv")
+    stratified.to_csv("./datasets/Strat82022.csv")
 
     '''
     # Completar cobertura muestreo estratificado
