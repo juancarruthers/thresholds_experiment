@@ -6,14 +6,16 @@ import pandas as pd
 import datetime
 import time
 import concurrent.futures
+from dateutil.relativedelta import relativedelta
 
 class GithubGraphQL:
 
-    def __init__(self, p_saveThreshold: int, queryFilter: str, p_itemsPageMainQuery = 30, p_itemsPageContrQuery = 100):
+    def __init__(self, p_saveThreshold: int, queryFilter: str, filters: dict, datasetPath: str, p_itemsPageMainQuery = 30, p_itemsPageContrQuery = 100):
         self._tokens = self._readFile("token").split(",\n")
         self._startSize, self._sizeInc, self._df_data = self._restoreCheckPoint()
         self._saveThreshold = p_saveThreshold
         self._queryVar = queryFilter + ", size:"
+        self._filters = filters
         self._queryFile = self._readFile("APIQueries/repositoryMetadata")
         self._repoCountQueryFile = self._readFile("APIQueries/repositoryCount")
         self._closeIssuesQuery = self._readFile("APIQueries/Issues/closedIssues")
@@ -24,7 +26,8 @@ class GithubGraphQL:
         self._elementPerPageMainQuery = p_itemsPageMainQuery
         self._elementPerPageContribQuery = str(p_itemsPageContrQuery)
         self._reqSleepTime = [50, 100, 150, 200, 250, 300]
-        self.quit = False
+        self._datasetPath = datasetPath
+        self._quit = False
 
     def main(self):
         try:
@@ -64,8 +67,9 @@ class GithubGraphQL:
                         executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
                         futures = {executor.submit(self._replaceNestedPropertiesValues, repoProperties) for repoProperties in repositories['edges']}
                         for future in concurrent.futures.as_completed(futures):
-                            repositoryProperties = future.result()
-                            self._df_data.append(repositoryProperties)
+                            repositoryProperties, filtersFlag = future.result()
+                            if not filtersFlag:
+                                self._df_data.append(repositoryProperties)
 
                         hasNextPage = repositories['pageInfo']['hasNextPage']
                         if hasNextPage:
@@ -83,44 +87,61 @@ class GithubGraphQL:
                 difference = finish - start
                 print('Start:', start, '- Finish:', datetime.datetime.now(), " -  Time:", difference)
                 df = pd.DataFrame(self._df_data)
-                df.to_csv("./datasets/" + str(finish.year) + str(finish.month) + str(finish.day) + "/githubquery.csv", index=False)
+
+                df.to_csv(self._datasetPath, index=False)
                 shutil.rmtree('./.backup')
         except KeyboardInterrupt:
             self.quit = True
 
-    def _replaceNestedPropertiesValues(self, repoProperties: dict) -> dict:
+    def _replaceNestedPropertiesValues(self, repoProperties: dict) -> tuple[dict, bool]:
         if not self.quit:
 
             properties = repoProperties['node']
             owner = properties['owner']['login']
             repositoryName = properties['name']
 
+            filtersFlag = False
+
             #NORMALIZE OUTPUT
-            self._updateLanguage(properties)
-            self._updateIssues(properties, owner, repositoryName)
-            self._updatePullRequests(properties, owner, repositoryName)
-            self._updateCommits(properties)
-            self._updateContributors(properties, owner, repositoryName)
+            filtersFlag = self._updateLanguage(properties, filtersFlag)
+            filtersFlag = self._updateCommits(properties, filtersFlag)
+            filtersFlag = self._updateIssues(properties, owner, repositoryName, filtersFlag)
+            filtersFlag = self._updatePullRequests(properties, owner, repositoryName, filtersFlag)
+            filtersFlag = self._updateContributors(properties, owner, repositoryName, filtersFlag)
 
             print(datetime.datetime.now(), "- Owner:", owner, "- Repository:", repositoryName)
 
-            return properties
+            return properties, filtersFlag
 
 
-    def _updateLanguage(self, json: dict):
-        if json['languages']['totalSize'] > 0:
+    def _updateLanguage(self, json: dict, filtersFlag: bool) -> bool:
+        totalSize: int = json['languages']['totalSize']
+
+        if filtersFlag or totalSize < self.filters['totalSize']:
+            return True
+
+        if totalSize > 0:
             newJson = {"primaryLanguage": json['languages']['edges'][0]['node']['name'], "totalSize": json['languages']['totalSize']}
         else:
             newJson = {"primaryLanguage": "-", "totalSize": 0}
         json.pop('languages', None)
         json.update(newJson)
+        return False
 
-    def _updateCommits(self, json: dict):
+    def _updateCommits(self, json: dict, filtersFlag: bool) -> bool:
+        dateLastCommit = json['defaultBranchRef']['target']['history']['nodes'][0]['committedDate']
+        if filtersFlag or dateLastCommit < self.filters['dateLastCommit']:
+            return True
+
         newJson = {"commits": json['defaultBranchRef']['target']['history']['totalCount'], "dateLastCommit": json['defaultBranchRef']['target']['history']['nodes'][0]['committedDate']}
         json.pop('defaultBranchRef', None)
         json.update(newJson)
+        return False
 
-    def _updateIssues(self, json: dict, owner: str, repoName: str):
+    def _updateIssues(self, json: dict, owner: str, repoName: str, filtersFlag: bool):
+        if filtersFlag:
+            return True
+
         if (json['issues']['totalCount'] > 0):
             states = {'closed': self._closeIssuesQuery, 'open': self._openIssuesQuery}
             newJson = {}
@@ -135,14 +156,23 @@ class GithubGraphQL:
                     newJson.update({state + "IssuesCount": pullReqCount, state + "IssueLastDate": '-'})
         else:
             newJson = {"closedIssuesCount": 0, "closedIssueLastDate": "-", "openIssuesCount": 0, "openIssueLastDate": "-"}
+
         json.pop('issues', None)
         json.update(newJson)
+
+        if json['closedIssuesCount'] < self.filters['closedIssuesCount']:
+            return True
+        else:
+            return False
 
     '''
     1)OBTENER CANTIDAD PULL REQUESTS CERRADAS DEL REPO NO MERGEADAS DE OTRO REPO
     2)FECHA ULTIMO PULL REQUEST
     '''
-    def _updatePullRequests(self, json: dict, owner: str, repoName: str):
+    def _updatePullRequests(self, json: dict, owner: str, repoName: str, filtersFlag: bool):
+        if filtersFlag:
+            return True
+
         if (json['pullRequests']['totalCount'] > 0):
             states = {'closed': self._closePullReqQuery, 'merged': self._mergedPullReqQuery, 'open': self._openPullReqQuery}
             newJson = {}
@@ -157,10 +187,20 @@ class GithubGraphQL:
                     newJson.update({state + "PullReqCount": pullReqCount, state + "PullReqLastDate": '-'})
         else:
             newJson = {"closedPullReqCount": 0, "closedPullReqLastDate": "-", "mergedPullReqCount": 0, "mergedPullReqLastDate": "-", "openPullReqCount": 0, "openPullReqLastDate": "-"}
+
         json.pop('pullRequests', None)
         json.update(newJson)
 
-    def _updateContributors(self, json: dict, owner: str, repoName: str):
+        if json['closedPullReqCount'] < self.filters['closedPullReqCount']:
+            return True
+        else:
+            return False
+
+    def _updateContributors(self, json: dict, owner: str, repoName: str, filtersFlag: bool):
+
+        if filtersFlag:
+            return True
+
         url = "https://api.github.com/repos/" + owner + "/" + repoName + "/contributors?per_page="+ self._elementPerPageContribQuery +"&page="
         i = 1
         response = self._makeRequest("", "GET", url + str(i))
@@ -177,6 +217,11 @@ class GithubGraphQL:
 
         json.pop('owner', None)
         json.update({"contributors": acum})
+
+        if json['contributors'] < self.filters['contributors']:
+            return True
+        else:
+            return False
 
 
     def _makeRequest (self, query: str | dict, reqType="POST", url='https://api.github.com/graphql') -> dict:
@@ -243,21 +288,31 @@ class GithubGraphQL:
         queryState = pd.DataFrame([{'startSize': startSize, 'sizeInc': sizeInc}])
         queryState.to_csv(path + "/queryState.csv", index=False)
 
-    def filterProjects(self, filePath: str, filters: dict):
-        if os.path.isfile(filePath):
-            dataset = pd.read_csv(filePath, encoding='unicode_escape')
-            dataset = dataset.drop_duplicates(subset=['url'])
-            for key, value in filters.items():
-                dataset = dataset[dataset[key] >= value]
-            today = datetime.datetime.now()
-            dataset.to_csv("./datasets/filtered" + str(today.year) + str(today.month) + str(today.day) + ".csv", index=False)
-        else:
-            print("Invalid path")
+def filterProjects(datasetPath: str, outputPath: str, filters: dict):
+    if os.path.isfile(datasetPath):
+        dataset = pd.read_csv(datasetPath, encoding='unicode_escape')
+        dataset = dataset.drop_duplicates(subset=['url'])
+        for key, value in filters.items():
+            dataset = dataset[dataset[key] >= value]
+        dataset.to_csv(outputPath, index=False)
+    else:
+        print("Invalid path")
 
 if __name__ == '__main__':
+
     #Github Graphql filter options without size
-    filter1 = "is:public, language:java, archived:false, mirror:false, forks:>=10, created:<=2021-07-06"
-    filter2 = {'totalSize': 10000, 'dateLastCommit': '2022-06-01', 'contributors': 3, 'closedIssuesCount': 50, 'closedPullReqCount': 50}
-    test = GithubGraphQL(5000, filter1)
-    #test.main()
-    test.filterProjects('./datasets/githubquery82022.csv', filter2)
+    today = datetime.date.today()
+    oneYearAgo = today - relativedelta(years=1)
+    oneMonthAgo = today - relativedelta(months=1)
+
+    datasetPath = "./datasets/" + str(today.year) + str(today.month) + str(today.day)
+    if not (os.path.isdir(datasetPath)):
+        os.mkdir(datasetPath)
+
+    queryFilter = "is:public, language:java, archived:false, mirror:false, forks:>=10, created:<=2021-07-06" + str(oneYearAgo)
+    secondFilter = {'totalSize': 10000, 'dateLastCommit': '2022-07-29', 'contributors': 3, 'closedIssuesCount': 50, 'closedPullReqCount': 50}
+    test = GithubGraphQL(5000, queryFilter, secondFilter, datasetPath + "/githubquery.csv")
+    test.main()
+    filterProjects("./datasets/2022829/githubquery.csv", "./datasets/2022829/filtered.csv", secondFilter)
+
+

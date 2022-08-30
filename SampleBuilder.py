@@ -4,12 +4,13 @@ import scipy.stats as sp
 import statsmodels.distributions.empirical_distribution as stMod
 import random as rd
 from DiversityScore import DiversityScore
+import json
 
 def createSimpleRandomSample(dataset: pd.DataFrame, proportion=0.2) -> pd.DataFrame:
     sample = dataset.sample(int(len(dataset) * proportion))
     return sample
 
-def createStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], proportion=0.2, configuration=[], includeOutliers=False) -> pd.DataFrame:
+def createStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], proportion=0.2, configuration=[], includeOutliers=False) -> tuple[pd.DataFrame, list]:
     clusterizer = DiversityScore(dataset, dimensions, configuration)
     diverseSample = createDiverseSample(frame, dimensions)
 
@@ -34,6 +35,8 @@ def createStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], proport
         if qty > 0:
             groupSample = rd.sample(group['similarProjects'], qty)
             sample += groupSample
+        group['groupQty'] += 1
+        group.pop('similarProjects')
 
     if includeOutliers:
         qty = round(len(outliers) * proportion)
@@ -43,7 +46,7 @@ def createStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], proport
     col_headers = dataset.columns.to_list()
     df = pd.DataFrame(sample)
     df.columns = col_headers
-    return df
+    return df, groups
 
 
 def createDiverseSample(dataset: pd.DataFrame, dimensions: list[str], configuration=[], sample=pd.DataFrame()) -> pd.DataFrame:
@@ -85,14 +88,14 @@ def createDiverseSample(dataset: pd.DataFrame, dimensions: list[str], configurat
 
     return df
 
-def testSampleDiversityRepresentativeness(sample: pd.DataFrame, population: pd.DataFrame, variables: list[str], sigLevel=0.05) -> tuple[tuple[float, list[float], np.ndarray], tuple[[dict], [dict]]]:
+def testSampleDiversityRepresentativeness(sample: pd.DataFrame, population: pd.DataFrame, variables: list[str], sigLevel=0.05) -> tuple[tuple[float, list, np.ndarray], tuple[list, list]]:
     diversityScore = DiversityScore(population, variables)
     dScore = diversityScore.scoreSample(sample)[0]
     rScore = testSampleKS(sample, population, variables, sigLevel)
 
     return dScore, rScore
 
-def testSampleKS(sample: pd.DataFrame, population: pd.DataFrame, variables: list[str], sigLevel: float) -> tuple[[dict], [dict]]:
+def testSampleKS(sample: pd.DataFrame, population: pd.DataFrame, variables: list[str], sigLevel: float) -> tuple[list, list]:
     variablesValues = []
     varHypRejected = []
     for variable in variables:
@@ -105,22 +108,15 @@ def testSampleKS(sample: pd.DataFrame, population: pd.DataFrame, variables: list
     return variablesValues, varHypRejected
 
 if __name__ == '__main__':
-    frame = pd.read_csv("./datasets/filtered82022.csv")
+    frame = pd.read_csv("./datasets/2022829/filtered.csv")
     dimensions = ['stargazerCount', 'forkCount', 'closedIssuesCount', 'totalSize', 'closedPullReqCount', 'commits']
     samples = []
 
 
     #start_time = time.time()
     simpleRandom = createSimpleRandomSample(frame)
-    stratified = createStratifiedSample(frame, dimensions)
+    stratified, groups = createStratifiedSample(frame, dimensions)
     diverse = createDiverseSample(frame, dimensions)
-    '''
-
-
-
-    simpleRandom = pd.read_csv("./datasets/Larger/Simple Random.csv")
-    stratified = pd.read_csv("./datasets/Larger/Stratified.csv")
-    diverse = pd.read_csv("./datasets/Larger/Diversity.csv")'''
 
     samples.append({'sampStrat': 'Simple Random', 'sample': simpleRandom})
     samples.append({'sampStrat': 'Stratified', 'sample': stratified})
@@ -131,7 +127,19 @@ if __name__ == '__main__':
         dScore = dScore
         nullHypRej = len(rScore[1])
         print('Sampling Strategy:', sample['sampStrat'], ' -Diversity Score:', dScore, ' -Null Hypotesis Rejected:', nullHypRej)
-        #sample['sample'].to_csv("./datasets/Larger/" + sample['sampStrat'] + ".csv")
+        sample['sample'].to_csv("./datasets/2022829/" + sample['sampStrat'] + ".csv", index=False)
+
+    for group in groups:
+        thresholds: dict = group['thresholds']
+        for threshold in thresholds:
+            key = list(threshold.keys())[0]
+            values = list(threshold.values())[0]
+            group[key + 'Min'] = values[0]
+            group[key + 'Max'] = values[1]
+
+    groupsDataframe = pd.DataFrame(groups)
+    groupsDataframe.pop('thresholds')
+    groupsDataframe.to_csv("./datasets/2022829/groups.csv", index=False)
 
     hypRejected = True
     while hypRejected:
@@ -140,20 +148,30 @@ if __name__ == '__main__':
             cdfFrame = stMod.ECDF(frame[variable].to_numpy())
             ks = sp.ks_1samp(stratified[variable], cdfFrame)
             print(variable, ' -Pvalues:', ks[1])
-            if ks[1] > 0.3:
+            if ks[1] > 0.25:
                 hypRejected = False
             else:
                 hypRejected = True
                 break
 
     #print("--- %s seconds ---" % (time.time() - start_time))
-    stratified.to_csv("./datasets/Strat82022.csv")
+    stratified.to_csv("./datasets/2022829/stratified.csv", index=False)
 
-    '''
-    # Completar cobertura muestreo estratificado
-    stratDiversified = createDiverseSample(frame, dimensions, sample=stratified)
-    dScore, rScore = testSampleDiversityRepresentativeness(frame, frame, dimensions)
-    dScore = dScore
-    nullHypRej = len(rScore[1])
-    print('Sampling Strategy: Stratified covered  -Diversity Score:', dScore, ' -Null Hypotesis Rejected:', nullHypRej)
-    '''
+
+
+
+
+    # Compare dataset waves
+    dimensions = ['stargazerCount', 'forkCount', 'closedIssuesCount', 'totalSize', 'closedPullReqCount', 'commits']
+
+    frame1 = pd.read_csv("./datasets/2022715/Stratified.csv")
+    frame2 = pd.read_csv("./datasets/2022823/Stratified.csv")
+    frame3 = pd.read_csv("./datasets/2022829/Stratified.csv")
+
+    for variable in dimensions:
+        res1 = sp.ks_2samp(frame1[variable], frame2[variable])
+        res2 = sp.ks_2samp(frame2[variable], frame3[variable])
+        res3 = sp.ks_2samp(frame1[variable], frame3[variable])
+        print('Comparison 1 & 2 -- dimension: ' + variable + ' - test-score:' + str(res1[0]) + ' - p-value:' + str(res1[1]))
+        print('Comparison 2 & 3 -- dimension: ' + variable + ' - test-score:' + str(res2[0]) + ' - p-value:' + str(res2[1]))
+        print('Comparison 1 & 3 -- dimension: ' + variable + ' - test-score:' + str(res3[0]) + ' - p-value:' + str(res3[1]))
