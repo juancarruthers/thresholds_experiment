@@ -29,7 +29,7 @@ def createStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], proport
     groups, outliers = clusterizer.clusterizePopulation(sampleArray, populationArray)
     sample: list = sampleArray.tolist()
 
-
+    # ADD idGroup column in the output dataset, and the outliers are group 0
     for group in groups:
         qty = round((group['groupQty'] + 1) * proportion) - 1
         if qty > 0:

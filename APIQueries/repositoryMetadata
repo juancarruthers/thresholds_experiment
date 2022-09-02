@@ -16,6 +16,9 @@ query($first: Int!, $cursor: String, $query: String!){
         ... on Repository {
           id
           name
+          owner {
+            login
+          }
           stargazerCount
           url
           isPrivate
@@ -23,9 +26,6 @@ query($first: Int!, $cursor: String, $query: String!){
           isMirror
           forkCount
           createdAt
-          owner {
-            login
-          }
           languages(orderBy: {direction: DESC, field: SIZE}, first: 1) {
             edges {
               node {
