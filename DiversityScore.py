@@ -125,7 +125,10 @@ class DiversityScore:
                 thresholds.append({self.dimensions[i]: result[1]})
 
                 i += 1
-                projectIndexSet = projectIndexSet & similarityScore
+                if population.size > 0:
+                    projectIndexSet = projectIndexSet & similarityScore
+                else:
+                    break
 
             quantity = 0
             j = 0
@@ -138,7 +141,9 @@ class DiversityScore:
                     similarProjects.append(project)
                     quantity += 1
                     population = np.delete(population, j, 0)
-                j += 1
+                    projectIndexSet = np.delete(projectIndexSet, j, 0)
+                else:
+                    j += 1
             groups.append({'groupId': groupId, 'groupQty': quantity, 'thresholds': thresholds, 'similarProjects': similarProjects})
 
             groupId += 1
