@@ -103,7 +103,7 @@ class DiversityScore:
 
         return score, dimScore, indexSet
 
-    def clusterizePopulation(self, diverseSample: np.array, population: np.array) -> tuple[list, np.array]:
+    def clusterizePopulation(self, diverseSample: np.array, population: np.ndarray) -> tuple[list, np.array]:
         dimensionsKeys = []
         for dimension in self.dimensions:
             dimKey = self.population.columns.get_loc(dimension)
@@ -133,7 +133,9 @@ class DiversityScore:
             while j < population[:, 0].size:
                 similar = projectIndexSet[j]
                 if similar:
-                    similarProjects.append(population[j, :])
+                    project: np.ndarray = population[j, :]
+                    project = np.append(project, groupId)
+                    similarProjects.append(project)
                     quantity += 1
                     population = np.delete(population, j, 0)
                 j += 1

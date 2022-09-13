@@ -7,6 +7,7 @@ import datetime
 import time
 import concurrent.futures
 from dateutil.relativedelta import relativedelta
+import SampleBuilder as SB
 
 class GithubGraphQL:
 
@@ -289,28 +290,75 @@ class GithubGraphQL:
         queryState = pd.DataFrame([{'startSize': startSize, 'sizeInc': sizeInc}])
         queryState.to_csv(path + "/queryState.csv", index=False)
 
-    def updateFrame(self, frame):
+    def updateProject(self, project, repoDataQuery)-> bool | dict:
+        variables = {'repoName': project['name'], 'owner': project['owner']}
+        repoUpdate = {'query': repoDataQuery, 'variables': variables}
+        jsonResponse = self.makeRequest(repoUpdate)['data']['repository']
+        self.updateLanguage(jsonResponse, False)
+        result = self.updateCommits(jsonResponse, False)
+
+        if result:
+            return False
+
+        else:
+            jsonResponse["owner"] = project['owner']
+            self.updateIssues(jsonResponse, project['owner'], project['name'], False)
+            self.updatePullRequests(jsonResponse, project['owner'], project['name'], False)
+            self.updateContributors(jsonResponse, project['owner'], project['name'], False)
+            return jsonResponse
+
+
+    def updateSample(self, frameUpdated: pd.DataFrame, sample: pd.DataFrame, groups: pd.DataFrame, dimensions: list[str]):
+        frameUpdated = frameUpdated[~frameUpdated['id'].isin(sample['id'])]
+        repoDataQuery = self._readFile("./APIQueries/repositoryUpdate")
+        sampleFiltered = sample[sample['dateLastCommit'] < self._filters['dateLastCommit']]
+        for id, project in sampleFiltered.iterrows():
+            group = project['groupId']
+            jsonResponse = self.updateProject(project, repoDataQuery)
+            if jsonResponse:
+                groupUpdate = SB.getProjectGroup(jsonResponse, groups, dimensions).values.tolist()
+                if group in groupUpdate:
+                    jsonResponse['groupId'] = group
+                    newProject = pd.DataFrame([jsonResponse])
+                else:
+                    newProject = replace(frameUpdated, groups[group == groups['groupId']], dimensions)
+            else:
+                newProject = replace(frameUpdated, groups[group == groups['groupId']], dimensions)
+
+            sample.iloc[[id]] = newProject
+
+        sample.to_csv(self._datasetPath, index=False)
+
+
+    def updateFrame(self, frame: pd.DataFrame, groups: pd.DataFrame, dimensions: list[str]):
         repoDataQuery = self._readFile("./APIQueries/repositoryUpdate")
         frameFiltered = frame[frame['dateLastCommit'] < self._filters['dateLastCommit']]
         for id, project in frameFiltered.iterrows():
-            variables = {'repoName': project['name'], 'owner': project['owner']}
-            repoUpdate = {'query': repoDataQuery, 'variables': variables}
-            jsonResponse = self.makeRequest(repoUpdate)['data']['repository']
-            self.updateLanguage(jsonResponse, False)
-            result = self.updateCommits(jsonResponse, False)
-            if result:
-                frame.drop(id, inplace=True)
-            else:
-                jsonResponse["owner"] = project['owner']
-                #self.updateLanguage(jsonResponse, False)
-                self.updateIssues(jsonResponse, project['owner'], project['name'], False)
-                self.updatePullRequests(jsonResponse, project['owner'], project['name'], False)
-                self.updateContributors(jsonResponse, project['owner'], project['name'], False)
+            jsonResponse = self.updateProject(project, repoDataQuery)
+            if jsonResponse:
                 newRow = pd.DataFrame([jsonResponse])
                 frame.iloc[[id]] = newRow
+
+            else:
+                frame.drop(id, inplace=True)
+
         frame.to_csv(self._datasetPath, index=False)
 
-    #def updateSample(self, groups):
+def replace(frame: pd.DataFrame, group: pd.DataFrame, dimensions: list[str]):
+    frameAux = frame.copy()
+    for dimension in dimensions:
+        frameAux = frameAux[group[dimension + 'Min'].item() <= frameAux[dimension]]
+        frameAux = frameAux[group[dimension + 'Max'].item() >= frameAux[dimension]]
+
+    frameAux['groupId'] = group['groupId'].item()
+    randomNumber = random.randint(0, frameAux.shape[0] - 1)
+    project = frameAux.iloc[randomNumber]
+    return project
+
+
+
+
+
 
 def filterProjects(datasetPath: str, outputPath: str, filters: dict):
     if os.path.isfile(datasetPath):
@@ -324,7 +372,7 @@ def filterProjects(datasetPath: str, outputPath: str, filters: dict):
 
 
 if __name__ == '__main__':
-
+    '''
     #Github Graphql filter options without size
     today = datetime.date.today()
     oneYearAgo = today - relativedelta(years=1)
@@ -349,12 +397,14 @@ if __name__ == '__main__':
     secondFilter = {'totalSize': 10000, 'dateLastCommit': str(oneMonthAgo), 'contributors': 3, 'closedIssuesCount': 50,
                     'closedPullReqCount': 50}
     test = GithubGraphQL(queryFilter, secondFilter, "/githubquery.csv")
-    sample = pd.read_csv("./datasets/2022823/Stratified.csv")
-    groups = pd.read_csv("./datasets/2022823/groups.csv")
-    frame = pd.read_csv("./datasets/2022823/filtered.csv")
+    #sample = pd.read_csv("./datasets/2022823/Stratified.csv")
+    #groups = pd.read_csv("./datasets/2022823/groups.csv")
+    frame = pd.read_csv("./datasets/202291/filtered.csv")
+    sample = pd.read_csv("./datasets/202291/stratified.csv")
+    groups = pd.read_csv("./datasets/202291/groups.csv")
     dimensions = ['stargazerCount', 'forkCount', 'closedIssuesCount', 'totalSize', 'closedPullReqCount', 'commits']
-    test.updateFrame(frame)
-    '''
+    test.updateSample(frame, sample, groups, dimensions)
+
 
 
 

@@ -12,7 +12,7 @@ def createSimpleRandomSample(dataset: pd.DataFrame, proportion=0.2) -> pd.DataFr
 
 def createStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], proportion=0.2, configuration=[], includeOutliers=False) -> tuple[pd.DataFrame, list]:
     clusterizer = DiversityScore(dataset, dimensions, configuration)
-    diverseSample = createDiverseSample(frame, dimensions)
+    diverseSample = createDiverseSample(dataset, dimensions)
 
     cont = 0
     for column in diverseSample.columns.to_list():
@@ -20,30 +20,37 @@ def createStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], proport
             break
         cont += 1
 
+    diverseSample['groupId'] = diverseSample.index + 1
+    dataset = dataset[~dataset['id'].isin(diverseSample['id'])]
+
     sampleArray = diverseSample.to_numpy()
     populationArray = dataset.to_numpy()
-    for proj in sampleArray:
-        index = np.argwhere(populationArray == proj[cont])[0][0]
-        populationArray = np.delete(populationArray, index, 0)
 
     groups, outliers = clusterizer.clusterizePopulation(sampleArray, populationArray)
     sample: list = sampleArray.tolist()
 
+
     # ADD idGroup column in the output dataset, and the outliers are group 0
     for group in groups:
         qty = round((group['groupQty'] + 1) * proportion) - 1
+
         if qty > 0:
             groupSample = rd.sample(group['similarProjects'], qty)
             sample += groupSample
+
         group['groupQty'] += 1
         group.pop('similarProjects')
 
+    #CONNOT IDENTIFY OUTLIERS IN THE FRAME
+    '''
     if includeOutliers:
         qty = round(len(outliers) * proportion)
         groupSample = rd.sample(outliers.tolist(), qty)
         sample += groupSample
+    '''
 
     col_headers = dataset.columns.to_list()
+    col_headers.append('groupId')
     df = pd.DataFrame(sample)
     df.columns = col_headers
     return df, groups
@@ -107,7 +114,38 @@ def testSampleKS(sample: pd.DataFrame, population: pd.DataFrame, variables: list
 
     return variablesValues, varHypRejected
 
+
+def generateGroupsOutput(stratifiedSampleGroups: list, proportion = 0.2) -> pd.DataFrame:
+    groups = stratifiedSampleGroups.copy()
+
+    for group in groups:
+        group['sampleQty'] = round(group['groupQty'] * proportion)
+        if group['sampleQty'] == 0:
+            group['sampleQty'] = 1
+        thresholds: dict = group['thresholds']
+        for threshold in thresholds:
+            key = list(threshold.keys())[0]
+            values = list(threshold.values())[0]
+            group[key + 'Min'] = values[0]
+            group[key + 'Max'] = values[1]
+
+    groupsDataframe = pd.DataFrame(groups)
+    groupsDataframe.pop('thresholds')
+    return groupsDataframe
+
+
+def getProjectGroup (project: dict, groups: pd.DataFrame, dimensions: list[str]) -> pd.DataFrame:
+    for dimension in dimensions:
+        dimValue = project[dimension]
+        groups = groups[dimValue >= groups[dimension + 'Min']]
+        groups = groups[dimValue <= groups[dimension + 'Max']]
+
+    return groups['groupId']
+
+
 if __name__ == '__main__':
+    '''
+
     frame = pd.read_csv("./datasets/2022829/filtered.csv")
     dimensions = ['stargazerCount', 'forkCount', 'closedIssuesCount', 'totalSize', 'closedPullReqCount', 'commits']
     samples = []
@@ -129,21 +167,10 @@ if __name__ == '__main__':
         print('Sampling Strategy:', sample['sampStrat'], ' -Diversity Score:', dScore, ' -Null Hypotesis Rejected:', nullHypRej)
         sample['sample'].to_csv("./datasets/2022829/" + sample['sampStrat'] + ".csv", index=False)
 
-    for group in groups:
-        thresholds: dict = group['thresholds']
-        for threshold in thresholds:
-            key = list(threshold.keys())[0]
-            values = list(threshold.values())[0]
-            group[key + 'Min'] = values[0]
-            group[key + 'Max'] = values[1]
-
-    groupsDataframe = pd.DataFrame(groups)
-    groupsDataframe.pop('thresholds')
-    groupsDataframe.to_csv("./datasets/2022829/groups.csv", index=False)
 
     hypRejected = True
     while hypRejected:
-        stratified = createStratifiedSample(frame, dimensions)
+        stratified = createStratifiedSample(frame, dimensions)[0]
         for variable in dimensions:
             cdfFrame = stMod.ECDF(frame[variable].to_numpy())
             ks = sp.ks_1samp(stratified[variable], cdfFrame)
@@ -156,17 +183,17 @@ if __name__ == '__main__':
 
     #print("--- %s seconds ---" % (time.time() - start_time))
     stratified.to_csv("./datasets/2022829/stratified.csv", index=False)
+    
 
-
-
+    
 
 
     # Compare dataset waves
     dimensions = ['stargazerCount', 'forkCount', 'closedIssuesCount', 'totalSize', 'closedPullReqCount', 'commits']
 
-    frame1 = pd.read_csv("./datasets/2022715/Stratified.csv")
-    frame2 = pd.read_csv("./datasets/2022823/Stratified.csv")
-    frame3 = pd.read_csv("./datasets/2022829/Stratified.csv")
+    frame1 = pd.read_csv("./datasets/2022715/filtered.csv")
+    frame2 = pd.read_csv("./datasets/2022823/filtered.csv")
+    frame3 = pd.read_csv("./datasets/2022829/filtered.csv")
 
     for variable in dimensions:
         res1 = sp.ks_2samp(frame1[variable], frame2[variable])
@@ -175,3 +202,11 @@ if __name__ == '__main__':
         print('Comparison 1 & 2 -- dimension: ' + variable + ' - test-score:' + str(res1[0]) + ' - p-value:' + str(res1[1]))
         print('Comparison 2 & 3 -- dimension: ' + variable + ' - test-score:' + str(res2[0]) + ' - p-value:' + str(res2[1]))
         print('Comparison 1 & 3 -- dimension: ' + variable + ' - test-score:' + str(res3[0]) + ' - p-value:' + str(res3[1]))
+    '''
+    frame = pd.read_csv("./datasets/202291/filtered.csv")
+    dimensions = ['stargazerCount', 'forkCount', 'closedIssuesCount', 'totalSize', 'closedPullReqCount', 'commits']
+    stratified, groups = createStratifiedSample(frame, dimensions)
+    dScore, rScore = testSampleDiversityRepresentativeness(stratified, frame, dimensions)
+    stratified.to_csv("./datasets/202291/stratified.csv", index=False)
+    g = generateGroupsOutput(groups)
+    g.to_csv("./datasets/202291/groups.csv", index=False)
