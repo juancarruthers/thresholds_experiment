@@ -19,7 +19,8 @@ def createStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], proport
             break
         cont += 1
 
-    diverseSample['groupId'] = diverseSample.index + 1
+    #eliminar columna groupId de la muestra
+    #diverseSample['groupId'] = diverseSample.index + 1
     dataset = dataset[~dataset['id'].isin(diverseSample['id'])]
 
     sampleArray = diverseSample.to_numpy()
@@ -29,7 +30,7 @@ def createStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], proport
     sample: list = sampleArray.tolist()
 
     for group in groups:
-        qty = round((group['groupQty'] + 1) * proportion) - 1
+        qty = round((group['groupQty'] + 1) * proportion) - 1 # delete (+ 1) in the operation
 
         if qty > 0:
             groupSample = rd.sample(group['similarProjects'], qty)
@@ -39,7 +40,7 @@ def createStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], proport
         group.pop('similarProjects')
 
     col_headers = dataset.columns.to_list()
-    col_headers.append('groupId')
+    #col_headers.append('groupId')
     df = pd.DataFrame(sample)
     df.columns = col_headers
     return df, groups
@@ -120,6 +121,7 @@ def generateGroupsOutput(stratifiedSampleGroups: list, proportion = 0.2) -> pd.D
 
     groupsDataframe = pd.DataFrame(groups)
     groupsDataframe.pop('thresholds')
+    #groupsDataframe.pop('similarProjects')
     return groupsDataframe
 
 

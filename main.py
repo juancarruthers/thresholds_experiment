@@ -7,6 +7,7 @@ import time
 from GithubGraphQL import GithubGraphQL as GQL
 import statsmodels.distributions.empirical_distribution as stMod
 import scipy.stats as sp
+from Maintenance import Maintenance
 
 def createFrame(queryFilter: str, secondFilter: dict):
     today = datetime.date.today()
@@ -18,14 +19,18 @@ def createFrame(queryFilter: str, secondFilter: dict):
     projectRetriever = GQL(queryFilter, secondFilter, folderPath)
     projectRetriever.main()
 
-def updateFrame(folderPath: str, queryFilter: str, secondFilter: dict):
+def updateFrame(folderPath: str, queryFilter: str, secondFilter: dict, dimensions: list[str]):
 
     projectUpdater = GQL(queryFilter, secondFilter, folderPath)
+    maintenance = Maintenance(projectUpdater, dimensions, secondFilter['dateLastCommit'])
     frame = pd.read_csv(folderPath + "/frame.csv")
 
-    projectUpdater.updateFrame(frame)
+    frame = maintenance.updateFrame(frame)
 
-def createStratifiedSample(folderPath: str, dimensions: list[str]):
+    frame.to_csv(folderPath + "/frameUpdated.csv", index=False)
+    return frame
+
+def createStratifiedSample(folderPath: str, dimensions: list[str], ksScore = 0.25):
     start_time = time.time()
     frame = pd.read_csv(folderPath + "/frame.csv")
     stratified = pd.DataFrame()
@@ -37,7 +42,7 @@ def createStratifiedSample(folderPath: str, dimensions: list[str]):
             cdfFrame = stMod.ECDF(frame[variable].to_numpy())
             ks = sp.ks_1samp(stratified[variable], cdfFrame)
             print(variable, ' -Pvalues:', ks[1])
-            if ks[1] > 0.25:
+            if ks[1] > ksScore:
                 hypRejected = False
             else:
                 hypRejected = True
@@ -62,14 +67,14 @@ def createSamples(folderPath: str, dimensions: list[str]):
     createDiverseSample(folderPath, dimensions)
     createStratifiedSample(folderPath, dimensions)
 
-def updateSample(folderPath: str, dimensions: list[str], queryFilter: str, secondFilter: dict):
+def updateSample(frame: pd.DataFrame, sample: pd.DataFrame, folderPath: str, dimensions: list[str], queryFilter: str, secondFilter: dict, ksScore= 0.35):
 
-    frame = pd.read_csv(folderPath + "/frameUpdated.csv")
-    sample = pd.read_csv(folderPath + "/stratified.csv")
-    groups = pd.read_csv(folderPath + "/groups.csv")
     projectUpdater = GQL(queryFilter, secondFilter, folderPath)
 
-    projectUpdater.updateSample(frame, sample, groups, dimensions)
+    maintenance = Maintenance(projectUpdater, dimensions, secondFilter['dateLastCommit'])
+    sample = maintenance.updateSampleDTDQ(frame, sample, ksScore)
+    sample.to_csv(folderPath + "/sampleUpdated.csv", index=False)
+    return sample
 
 
 def scoreSample(samplePath: str, framePath: str, dimensions: list[str]):
@@ -83,9 +88,9 @@ def scoreSample(samplePath: str, framePath: str, dimensions: list[str]):
 def compareWaves():
     dimensions = ['stargazerCount', 'forkCount', 'closedIssuesCount', 'totalSize', 'closedPullReqCount', 'commits']
 
-    frame1 = pd.read_csv("./datasets/2022715/filtered.csv")
-    frame2 = pd.read_csv("./datasets/2022823/filtered.csv")
-    frame3 = pd.read_csv("./datasets/2022829/filtered.csv")
+    frame1 = pd.read_csv("./datasets/20220715/stratified.csv")
+    frame2 = pd.read_csv("./datasets/20220901/sampleUpdated.csv")
+    frame3 = pd.read_csv("./datasets/20220913/sampleUpdated.csv")
 
     for variable in dimensions:
         res1 = sp.ks_2samp(frame1[variable], frame2[variable])
@@ -107,7 +112,14 @@ if __name__ == '__main__':
     secondFilter = {'totalSize': 10000, 'dateLastCommit': str(oneMonthAgo), 'contributors': 3, 'closedIssuesCount': 50,
                     'closedPullReqCount': 50}
 
-    folderPath = "./datasets/2022913"
+    folderPath = "./datasets/20220913"
     dimensions = ['stargazerCount', 'forkCount', 'closedIssuesCount', 'totalSize', 'closedPullReqCount', 'commits']
 
-    scoreSample(folderPath + "/sampleUpdated.csv", folderPath + "/frame.csv", dimensions)
+
+    #createStratifiedSample('./datasets/2022715', dimensions, 0.25)
+    sample = pd.read_csv("./datasets/20220901/sampleUpdated.csv")
+    frame = pd.read_csv(folderPath + "/frame.csv")
+    updateSample(frame, sample, folderPath, dimensions, queryFilter, secondFilter)
+    scoreSample(folderPath + '/sampleUpdated.csv', folderPath + '/frame.csv', dimensions)
+    print("FIN")
+

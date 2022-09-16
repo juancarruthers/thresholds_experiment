@@ -1,29 +1,32 @@
 import os.path
 import random
 import shutil
+import scipy.stats as sp
+import statsmodels.distributions.empirical_distribution as stMod
+import numpy as np
 import requests
 import pandas as pd
 import datetime
 import time
 import concurrent.futures
-from dateutil.relativedelta import relativedelta
 import SampleBuilder as SB
+from DiversityScore import DiversityScore
 
 class GithubGraphQL:
 
     def __init__(self, queryFilter: str, filters: dict, folderPath: str, p_saveThreshold = 5000, p_itemsPageMainQuery = 30, p_itemsPageContrQuery = 100):
-        self._tokens = self._readFile("token").split(",\n")
+        self._tokens = self.readFile("token").split(",\n")
         self._startSize, self._sizeInc, self._df_data = self._restoreCheckPoint()
         self._saveThreshold = p_saveThreshold
         self._queryVar = queryFilter + ", size:"
         self._filters = filters
-        self._queryFile = self._readFile("APIQueries/repositoryMetadata")
-        self._repoCountQueryFile = self._readFile("APIQueries/repositoryCount")
-        self._closeIssuesQuery = self._readFile("APIQueries/Issues/closedIssues")
-        self._openIssuesQuery = self._readFile("APIQueries/Issues/openIssues")
-        self._closePullReqQuery = self._readFile("APIQueries/PullReq/closedPullReq")
-        self._mergedPullReqQuery = self._readFile("APIQueries/PullReq/mergedPullReq")
-        self._openPullReqQuery = self._readFile("APIQueries/PullReq/openPullReq")
+        self._queryFile = self.readFile("APIQueries/repositoryMetadata")
+        self._repoCountQueryFile = self.readFile("APIQueries/repositoryCount")
+        self._closeIssuesQuery = self.readFile("APIQueries/Issues/closedIssues")
+        self._openIssuesQuery = self.readFile("APIQueries/Issues/openIssues")
+        self._closePullReqQuery = self.readFile("APIQueries/PullReq/closedPullReq")
+        self._mergedPullReqQuery = self.readFile("APIQueries/PullReq/mergedPullReq")
+        self._openPullReqQuery = self.readFile("APIQueries/PullReq/openPullReq")
         self._elementPerPageMainQuery = p_itemsPageMainQuery
         self._elementPerPageContribQuery = str(p_itemsPageContrQuery)
         self._reqSleepTime = [50, 100, 150, 200, 250, 300]
@@ -259,7 +262,7 @@ class GithubGraphQL:
             exit()
 
 
-    def _readFile(self, filePath: str) -> str:
+    def readFile(self, filePath: str) -> str:
         file = open(filePath).readlines()
         query = ""
 
@@ -319,6 +322,7 @@ class GithubGraphQL:
                 if group in groupUpdate:
                     jsonResponse['groupId'] = group
                     newProject = pd.Series(jsonResponse)
+
                 else:
                     newProject = self._replace(frameUpdated, groups[group == groups['groupId']], dimensions)
             else:
@@ -330,7 +334,6 @@ class GithubGraphQL:
                 sample.loc[id] = newProject
 
         sample.to_csv(self._folderPath + "/sampleUpdated.csv", index=False)
-
 
     def _replace(self, frame: pd.DataFrame, group: pd.DataFrame, dimensions: list[str]):
         frameAux = frame.copy()
@@ -346,8 +349,8 @@ class GithubGraphQL:
         return project
 
 
-    def updateFrame(self, frame: pd.DataFrame):
-        repoDataQuery = self._readFile("./APIQueries/repositoryUpdate")
+    def updateFrame(self, frame: pd.DataFrame, dimensions: list[str]):
+        repoDataQuery = self.readFile("./APIQueries/repositoryUpdate")
         frameFiltered = frame[frame['dateLastCommit'] < self._filters['dateLastCommit']]
         for id, project in frameFiltered.iterrows():
             jsonResponse = self._updateProject(project, repoDataQuery)
@@ -359,7 +362,104 @@ class GithubGraphQL:
                 frame.drop(id, inplace=True)
 
         frame.to_csv(self._folderPath + "/frameUpdated.csv", index=False)
+        frame = pd.read_csv(self._folderPath + "/frameUpdated.csv")
+        self.sampleRecategorization2(dimensions, frame)
 
+    def sampleRecategorization(self, dimensions, frame: pd.DataFrame):
+
+
+        clusterizer = DiversityScore(frame, dimensions)
+        diverseSample = SB.createDiverseSample(frame, dimensions)
+        sampleArray = diverseSample.to_numpy()
+        populationArray = frame.to_numpy()
+
+        groups, outliers = clusterizer.clusterizePopulation(sampleArray, populationArray)
+        groups = SB.generateGroupsOutput(groups)
+        groupsDF = pd.DataFrame(groups)
+
+        #open sample
+        sample = pd.read_csv('./datasets/202291/stratified.csv')
+        #self.updateSample(frame, sample, groupsDF, dimensions)
+        sample = pd.read_csv(self._folderPath + '/sampleUpdated.csv')
+
+
+        for id, group in groupsDF.iterrows():
+            elementsInTheGroup = pd.DataFrame(group['similarProjects'], columns=frame.columns)
+            sampleFiltered = sample[sample['id'].isin(elementsInTheGroup['id'])].copy()
+            frameFiltered = frame[frame['id'].isin(elementsInTheGroup['id'])].copy()
+            frameFiltered = frameFiltered[~frameFiltered['id'].isin(sampleFiltered['id'])]
+
+            quantity = sampleFiltered.shape[0]
+            difference = int(group['sampleQty'] - quantity)
+            if difference > 0:
+                randElem = frameFiltered.sample(difference)
+                sample = pd.concat([sample, randElem], ignore_index=True)
+
+                #add
+            elif difference < 0:
+                #delete
+                randElem = sampleFiltered.sample(difference * -1)
+                sample = sampleFiltered[~sampleFiltered['id'].isin(randElem['id'])]
+
+
+        sample.to_csv(self._folderPath + "/sampleUpdated2.csv", index=False)
+
+
+    def sampleRecategorization2(self, dimensions, frame: pd.DataFrame, ksScore = 0.2):
+
+        sample = pd.read_csv('./datasets/202291/stratified.csv')
+        sampleUpdated = frame[frame['id'].isin(sample['id'])].reset_index(drop=True)
+        DS = DiversityScore(frame, dimensions)
+        filledSample = SB.createDiverseSample(frame, dimensions, sample=sampleUpdated)
+        representative = self.testRepresentativeness(filledSample, frame, dimensions, ksScore)
+
+        while not (representative):
+            sampleAux = sampleUpdated.copy()
+
+            diverseSample = SB.createDiverseSample(frame, dimensions)
+            sampleArray = diverseSample.to_numpy()
+            populationArray = frame.to_numpy()
+
+            groups, outliers = DS.clusterizePopulation(sampleArray, populationArray)
+            groups = SB.generateGroupsOutput(groups)
+            groupsDF = pd.DataFrame(groups)
+
+
+            for id, group in groupsDF.iterrows():
+                elementsInTheGroup = pd.DataFrame(group['similarProjects'], columns=frame.columns)
+                sampleFiltered = sampleAux[sampleAux['id'].isin(elementsInTheGroup['id'])].copy()
+                frameFiltered = frame[frame['id'].isin(elementsInTheGroup['id'])].copy()
+                frameFiltered = frameFiltered[~frameFiltered['id'].isin(sampleFiltered['id'])]
+
+                quantity = sampleFiltered.shape[0]
+                difference = int(group['sampleQty'] - quantity)
+                projDiv = diverseSample.iloc[[id]]
+
+                if difference > 0:
+                    if projDiv['id'].item() in sampleAux['id'].values:
+                        randElem = frameFiltered.sample(difference)
+                    else:
+                        randElem = pd.concat([frameFiltered.sample(difference - 1), projDiv], ignore_index=True)
+                    sampleAux = pd.concat([sampleAux, randElem], ignore_index=True)
+                elif difference < 0:
+                    randElem = sampleFiltered.sample(difference * -1)
+                    randElem = randElem[projDiv['id'].item() != randElem['id']]
+                    sampleAux = sampleAux[~sampleAux['id'].isin(randElem['id'])]
+
+            filledSample = SB.createDiverseSample(frame, dimensions, sample=sampleAux)
+            representative = self.testRepresentativeness(filledSample, frame, dimensions, ksScore)
+
+        filledSample.to_csv(self._folderPath + "/sampleUpdated2.csv", index=False)
+
+    def testRepresentativeness (self, sample, population, dimensions, ksScore = 0.2) -> bool:
+
+        for variable in dimensions:
+            cdfFrame = stMod.ECDF(population[variable].to_numpy())
+            ks = sp.ks_1samp(sample[variable], cdfFrame)
+            if ks[1] < ksScore:
+                return False
+
+        return True
 
     def _filterProjects(self):
         dataset = pd.DataFrame(self._df_data)
@@ -368,7 +468,6 @@ class GithubGraphQL:
         for key, value in self._filters.items():
             dataset = dataset[dataset[key] >= value]
         dataset.to_csv(self._folderPath + "/frame.csv", index=False)
-
 
 
 

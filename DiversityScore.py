@@ -130,6 +130,7 @@ class DiversityScore:
                 else:
                     break
 
+            #start quantity at 1
             quantity = 0
             j = 0
             similarProjects = []
@@ -137,7 +138,7 @@ class DiversityScore:
                 similar = projectIndexSet[j]
                 if similar:
                     project: np.ndarray = population[j, :]
-                    project = np.append(project, groupId)
+                    #project = np.append(project, groupId) #delete groupID
                     similarProjects.append(project)
                     quantity += 1
                     population = np.delete(population, j, 0)
