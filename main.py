@@ -118,17 +118,9 @@ if __name__ == '__main__':
     secondFilter = {'totalSize': 10000, 'dateLastCommit': str(oneMonthAgo), 'contributors': 3, 'closedIssuesCount': 50,
                     'closedPullReqCount': 50}
 
-    folderPath = "./datasets/20220913"
+    folderPath = "./datasets/20220915"
     dimensions = ['stargazerCount', 'forkCount', 'closedIssuesCount', 'totalSize', 'closedPullReqCount', 'commits']
 
 
-    #createStratifiedSample('./datasets/20220715', dimensions, 0.2)
-    sample = pd.read_csv("./datasets/20220715/stratified.csv")
-    groups = pd.read_csv("./datasets/20220715/groups.csv")
-    frame = pd.read_csv(folderPath + "/frame.csv")
-    updateSample(frame, sample, groups, folderPath, dimensions, queryFilter, secondFilter, .1)
-    scoreSample(folderPath + '/sampleUpdatedDTDQ.csv', folderPath + '/frame.csv', dimensions)
-    scoreSample(folderPath + '/sampleUpdatedSTDQ.csv', folderPath + '/frame.csv', dimensions)
-    scoreSample(folderPath + '/sampleUpdatedSTSQ.csv', folderPath + '/frame.csv', dimensions)
-    print("FIN")
+
 

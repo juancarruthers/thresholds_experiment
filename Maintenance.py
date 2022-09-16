@@ -4,6 +4,7 @@ from DiversityScore import DiversityScore
 import scipy.stats as sp
 import statsmodels.distributions.empirical_distribution as stMod
 from GithubGraphQL import GithubGraphQL
+import Utilities as util
 
 
 class Maintenance:
@@ -32,7 +33,7 @@ class Maintenance:
 
 
     def updateFrame(self, frame: pd.DataFrame) -> pd.DataFrame:
-        repoDataQuery = self._GQL.readFile("./APIQueries/repositoryUpdate")
+        repoDataQuery = util.readFile("./APIQueries/repositoryUpdate")
         frameFiltered = frame[frame['dateLastCommit'] < self._dateLastCommit]
         for id, project in frameFiltered.iterrows():
             jsonResponse = self._updateProject(project, repoDataQuery)

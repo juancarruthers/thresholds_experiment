@@ -1,4 +1,3 @@
-import os.path
 import random
 import shutil
 import requests
@@ -6,22 +5,23 @@ import pandas as pd
 import datetime
 import time
 import concurrent.futures
+import Utilities as util
 
 class GithubGraphQL:
 
     def __init__(self, queryFilter: str, filters: dict, folderPath: str, p_saveThreshold = 5000, p_itemsPageMainQuery = 30, p_itemsPageContrQuery = 100):
-        self._tokens = self.readFile("token").split(",\n")
-        self._startSize, self._sizeInc, self._df_data = self._restoreCheckPoint()
+        self._tokens = util.readFile("token").split(",\n")
+        self._startSize, self._sizeInc, self._df_data = util.restoreCheckPoint()
         self._saveThreshold = p_saveThreshold
         self._queryVar = queryFilter + ", size:"
         self._filters = filters
-        self._queryFile = self.readFile("APIQueries/repositoryMetadata")
-        self._repoCountQueryFile = self.readFile("APIQueries/repositoryCount")
-        self._closeIssuesQuery = self.readFile("APIQueries/Issues/closedIssues")
-        self._openIssuesQuery = self.readFile("APIQueries/Issues/openIssues")
-        self._closePullReqQuery = self.readFile("APIQueries/PullReq/closedPullReq")
-        self._mergedPullReqQuery = self.readFile("APIQueries/PullReq/mergedPullReq")
-        self._openPullReqQuery = self.readFile("APIQueries/PullReq/openPullReq")
+        self._queryFile = util.readFile("APIQueries/repositoryMetadata")
+        self._repoCountQueryFile = util.readFile("APIQueries/repositoryCount")
+        self._closeIssuesQuery = util.readFile("APIQueries/Issues/closedIssues")
+        self._openIssuesQuery = util.readFile("APIQueries/Issues/openIssues")
+        self._closePullReqQuery = util.readFile("APIQueries/PullReq/closedPullReq")
+        self._mergedPullReqQuery = util.readFile("APIQueries/PullReq/mergedPullReq")
+        self._openPullReqQuery = util.readFile("APIQueries/PullReq/openPullReq")
         self._elementPerPageMainQuery = p_itemsPageMainQuery
         self._elementPerPageContribQuery = str(p_itemsPageContrQuery)
         self._reqSleepTime = [50, 100, 150, 200, 250, 300]
@@ -62,7 +62,7 @@ class GithubGraphQL:
                         jsonResponse = self.makeRequest(repoQuery)
                         repositories = jsonResponse['data']['search']
 
-                        #CONCURRENCY
+                        #PARALELISM
                         executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
                         futures = {executor.submit(self._replaceNestedPropertiesValues, repoProperties) for repoProperties in repositories['edges']}
                         for future in concurrent.futures.as_completed(futures):
@@ -77,7 +77,7 @@ class GithubGraphQL:
                     projectsSaved += repoCountSubQuery
 
                     if projectsSaved > self._saveThreshold:
-                        self._saveCheckPoint(self._startSize, self._sizeInc, self._df_data)
+                        util.saveCheckPoint(self._startSize, self._sizeInc, self._df_data)
                         projectsSaved = 0
 
                     self._startSize += self._sizeInc
@@ -214,7 +214,6 @@ class GithubGraphQL:
                 i += 1
                 response = self.makeRequest("", "GET", url + str(i))
 
-        #json.pop('owner', None)
         json.update({"contributors": acum})
 
         if json['contributors'] < self._filters['contributors']:
@@ -255,37 +254,6 @@ class GithubGraphQL:
             self.quit = True
             print(err)
             exit()
-
-
-    def readFile(self, filePath: str) -> str:
-        file = open(filePath).readlines()
-        query = ""
-
-        for lines in file:
-            query += lines
-
-        return query
-
-    def _restoreCheckPoint(self) -> tuple[int, int, list]:
-        startSize = 10000
-        sizeInc = 2000
-        path = './.backup'
-        if os.path.isdir(path):
-            backupData = pd.read_csv(path + '/largerFrame.csv', encoding='unicode_escape').to_dict('records')
-            queryState = pd.read_csv(path + '/queryState.csv')
-            return int(queryState.iloc[0, 0]), int(queryState.iloc[0, 1]), backupData
-        else:
-            return startSize, sizeInc, []
-
-    def _saveCheckPoint(self, startSize: int, sizeInc: int, dataset: list[dict]):
-        path = "./.backup"
-        if not (os.path.isdir(path)):
-            os.mkdir(path)
-
-        df = pd.DataFrame(dataset)
-        df.to_csv(path + '/largerFrame.csv', index=False)
-        queryState = pd.DataFrame([{'startSize': startSize, 'sizeInc': sizeInc}])
-        queryState.to_csv(path + "/queryState.csv", index=False)
 
     def _filterProjects(self):
         dataset = pd.DataFrame(self._df_data)
