@@ -46,7 +46,50 @@ class Maintenance:
         return frame
 
 
+    def updateSampleST(self, frame:pd.DataFrame, sample: pd.DataFrame, groups: pd.DataFrame, ksScore = 0.2, STQ = 'dynamic') -> pd.DataFrame:
 
+        sampleUpdated = frame[frame['id'].isin(sample['id'])].reset_index(drop=True)
+        sampleAux = pd.DataFrame
+        representative = False
+
+        while not (representative):
+            frameAux = frame.copy()
+            sampleAux = sampleUpdated.copy()
+
+            for id, group in groups.iterrows():
+                elementsInTheGroup = frameAux.copy()
+
+                for dimension in self._dimensions:
+                    elementsInTheGroup = elementsInTheGroup[group[dimension + 'Min'] <= elementsInTheGroup[dimension]]
+                    elementsInTheGroup = elementsInTheGroup[group[dimension + 'Max'] >= elementsInTheGroup[dimension]]
+
+                sampleFiltered = sampleAux[sampleAux['id'].isin(elementsInTheGroup['id'])].copy()
+                frameFiltered = frameAux[frameAux['id'].isin(elementsInTheGroup['id'])].copy()
+
+                frameQuantity = 0
+                if STQ == 'static':
+                    frameQuantity = int(group['sampleQty'])
+                elif STQ == 'dynamic':
+                    frameQuantity = round(frameFiltered.shape[0] * 0.2)
+
+                sampleQuantity = sampleFiltered.shape[0]
+                difference = frameQuantity - sampleQuantity
+
+                if difference > 0:
+                    if frameFiltered.shape[0] < difference:
+                        difference = frameFiltered.shape[0]
+                    frameFiltered = frameFiltered[~frameFiltered['id'].isin(sampleFiltered['id'])]
+                    randElem = frameFiltered.sample(difference)
+                    sampleAux = pd.concat([sampleAux, randElem], ignore_index=True)
+                else:
+                    randElem = sampleFiltered.sample(difference * -1)
+                    sampleAux = sampleAux[~sampleAux['id'].isin(randElem['id'])]
+
+                frameAux = frameAux[~frameAux['id'].isin(elementsInTheGroup['id'])]
+
+            representative = self.testRepresentativeness(sampleAux, frame, ksScore)
+
+        return sampleAux
 
 
     def updateSampleDTDQ(self, frame:pd.DataFrame, sample: pd.DataFrame, ksScore = 0.2) -> pd.DataFrame:
@@ -80,7 +123,7 @@ class Maintenance:
 
                 projDiv = diverseSample.iloc[[id]]
                 if difference > 0:
-                    randElem = pd.concat([frameFiltered.sample(difference - 1)], ignore_index=True)
+                    randElem = frameFiltered.sample(difference - 1)
                     sampleAux = pd.concat([sampleAux, randElem], ignore_index=True)
                 else:
                     randElem = sampleFiltered.sample((difference - 1) * -1)

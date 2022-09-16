@@ -127,18 +127,14 @@ class DiversityScore:
                 i += 1
                 if population.size > 0:
                     projectIndexSet = projectIndexSet & similarityScore
-                else:
-                    break
 
-            #start quantity at 1
-            quantity = 0
+            quantity = 1
             j = 0
             similarProjects = []
             while j < population[:, 0].size:
                 similar = projectIndexSet[j]
                 if similar:
                     project: np.ndarray = population[j, :]
-                    #project = np.append(project, groupId) #delete groupID
                     similarProjects.append(project)
                     quantity += 1
                     population = np.delete(population, j, 0)

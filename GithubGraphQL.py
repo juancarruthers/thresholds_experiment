@@ -1,16 +1,11 @@
 import os.path
 import random
 import shutil
-import scipy.stats as sp
-import statsmodels.distributions.empirical_distribution as stMod
-import numpy as np
 import requests
 import pandas as pd
 import datetime
 import time
 import concurrent.futures
-import SampleBuilder as SB
-from DiversityScore import DiversityScore
 
 class GithubGraphQL:
 
@@ -292,175 +287,6 @@ class GithubGraphQL:
         queryState = pd.DataFrame([{'startSize': startSize, 'sizeInc': sizeInc}])
         queryState.to_csv(path + "/queryState.csv", index=False)
 
-    def _updateProject(self, project, repoDataQuery)-> bool | dict:
-        variables = {'repoName': project['name'], 'owner': project['owner']}
-        repoUpdate = {'query': repoDataQuery, 'variables': variables}
-        jsonResponse = self.makeRequest(repoUpdate)['data']['repository']
-        self.updateLanguage(jsonResponse, False)
-        result = self.updateCommits(jsonResponse, False)
-
-        if result:
-            return False
-
-        else:
-            jsonResponse["owner"] = project['owner']
-            self.updateIssues(jsonResponse, project['owner'], project['name'], False)
-            self.updatePullRequests(jsonResponse, project['owner'], project['name'], False)
-            self.updateContributors(jsonResponse, project['owner'], project['name'], False)
-            return jsonResponse
-
-
-    def updateSample(self, frameUpdated: pd.DataFrame, sample: pd.DataFrame, groups: pd.DataFrame, dimensions: list[str]):
-        frameUpdated = frameUpdated[~frameUpdated['id'].isin(sample['id'])]
-        repoDataQuery = self._readFile("./APIQueries/repositoryUpdate")
-        sampleFiltered = sample[sample['dateLastCommit'] < self._filters['dateLastCommit']]
-        for id, project in sampleFiltered.iterrows():
-            group = project['groupId']
-            jsonResponse = self._updateProject(project, repoDataQuery)
-            if jsonResponse:
-                groupUpdate = SB.getProjectGroup(jsonResponse, groups, dimensions).values.tolist()
-                if group in groupUpdate:
-                    jsonResponse['groupId'] = group
-                    newProject = pd.Series(jsonResponse)
-
-                else:
-                    newProject = self._replace(frameUpdated, groups[group == groups['groupId']], dimensions)
-            else:
-                newProject = self._replace(frameUpdated, groups[group == groups['groupId']], dimensions)
-
-            if newProject.empty:
-                sample.drop(id, inplace=True)
-            else:
-                sample.loc[id] = newProject
-
-        sample.to_csv(self._folderPath + "/sampleUpdated.csv", index=False)
-
-    def _replace(self, frame: pd.DataFrame, group: pd.DataFrame, dimensions: list[str]):
-        frameAux = frame.copy()
-        for dimension in dimensions:
-            frameAux = frameAux[group[dimension + 'Min'].item() <= frameAux[dimension]]
-            frameAux = frameAux[group[dimension + 'Max'].item() >= frameAux[dimension]]
-
-        project = pd.DataFrame()
-        if frameAux.shape[0] > 0:
-            frameAux['groupId'] = group['groupId'].item()
-            randomNumber = random.randint(0, frameAux.shape[0] - 1)
-            project = frameAux.iloc[randomNumber]
-        return project
-
-
-    def updateFrame(self, frame: pd.DataFrame, dimensions: list[str]):
-        repoDataQuery = self.readFile("./APIQueries/repositoryUpdate")
-        frameFiltered = frame[frame['dateLastCommit'] < self._filters['dateLastCommit']]
-        for id, project in frameFiltered.iterrows():
-            jsonResponse = self._updateProject(project, repoDataQuery)
-            if jsonResponse:
-                newRow = pd.Series(jsonResponse)
-                frame.loc[id] = newRow
-
-            else:
-                frame.drop(id, inplace=True)
-
-        frame.to_csv(self._folderPath + "/frameUpdated.csv", index=False)
-        frame = pd.read_csv(self._folderPath + "/frameUpdated.csv")
-        self.sampleRecategorization2(dimensions, frame)
-
-    def sampleRecategorization(self, dimensions, frame: pd.DataFrame):
-
-
-        clusterizer = DiversityScore(frame, dimensions)
-        diverseSample = SB.createDiverseSample(frame, dimensions)
-        sampleArray = diverseSample.to_numpy()
-        populationArray = frame.to_numpy()
-
-        groups, outliers = clusterizer.clusterizePopulation(sampleArray, populationArray)
-        groups = SB.generateGroupsOutput(groups)
-        groupsDF = pd.DataFrame(groups)
-
-        #open sample
-        sample = pd.read_csv('./datasets/202291/stratified.csv')
-        #self.updateSample(frame, sample, groupsDF, dimensions)
-        sample = pd.read_csv(self._folderPath + '/sampleUpdated.csv')
-
-
-        for id, group in groupsDF.iterrows():
-            elementsInTheGroup = pd.DataFrame(group['similarProjects'], columns=frame.columns)
-            sampleFiltered = sample[sample['id'].isin(elementsInTheGroup['id'])].copy()
-            frameFiltered = frame[frame['id'].isin(elementsInTheGroup['id'])].copy()
-            frameFiltered = frameFiltered[~frameFiltered['id'].isin(sampleFiltered['id'])]
-
-            quantity = sampleFiltered.shape[0]
-            difference = int(group['sampleQty'] - quantity)
-            if difference > 0:
-                randElem = frameFiltered.sample(difference)
-                sample = pd.concat([sample, randElem], ignore_index=True)
-
-                #add
-            elif difference < 0:
-                #delete
-                randElem = sampleFiltered.sample(difference * -1)
-                sample = sampleFiltered[~sampleFiltered['id'].isin(randElem['id'])]
-
-
-        sample.to_csv(self._folderPath + "/sampleUpdated2.csv", index=False)
-
-
-    def sampleRecategorization2(self, dimensions, frame: pd.DataFrame, ksScore = 0.2):
-
-        sample = pd.read_csv('./datasets/202291/stratified.csv')
-        sampleUpdated = frame[frame['id'].isin(sample['id'])].reset_index(drop=True)
-        DS = DiversityScore(frame, dimensions)
-        filledSample = SB.createDiverseSample(frame, dimensions, sample=sampleUpdated)
-        representative = self.testRepresentativeness(filledSample, frame, dimensions, ksScore)
-
-        while not (representative):
-            sampleAux = sampleUpdated.copy()
-
-            diverseSample = SB.createDiverseSample(frame, dimensions)
-            sampleArray = diverseSample.to_numpy()
-            populationArray = frame.to_numpy()
-
-            groups, outliers = DS.clusterizePopulation(sampleArray, populationArray)
-            groups = SB.generateGroupsOutput(groups)
-            groupsDF = pd.DataFrame(groups)
-
-
-            for id, group in groupsDF.iterrows():
-                elementsInTheGroup = pd.DataFrame(group['similarProjects'], columns=frame.columns)
-                sampleFiltered = sampleAux[sampleAux['id'].isin(elementsInTheGroup['id'])].copy()
-                frameFiltered = frame[frame['id'].isin(elementsInTheGroup['id'])].copy()
-                frameFiltered = frameFiltered[~frameFiltered['id'].isin(sampleFiltered['id'])]
-
-                quantity = sampleFiltered.shape[0]
-                difference = int(group['sampleQty'] - quantity)
-                projDiv = diverseSample.iloc[[id]]
-
-                if difference > 0:
-                    if projDiv['id'].item() in sampleAux['id'].values:
-                        randElem = frameFiltered.sample(difference)
-                    else:
-                        randElem = pd.concat([frameFiltered.sample(difference - 1), projDiv], ignore_index=True)
-                    sampleAux = pd.concat([sampleAux, randElem], ignore_index=True)
-                elif difference < 0:
-                    randElem = sampleFiltered.sample(difference * -1)
-                    randElem = randElem[projDiv['id'].item() != randElem['id']]
-                    sampleAux = sampleAux[~sampleAux['id'].isin(randElem['id'])]
-
-            filledSample = SB.createDiverseSample(frame, dimensions, sample=sampleAux)
-            representative = self.testRepresentativeness(filledSample, frame, dimensions, ksScore)
-
-        filledSample.to_csv(self._folderPath + "/sampleUpdated2.csv", index=False)
-
-    def testRepresentativeness (self, sample, population, dimensions, ksScore = 0.2) -> bool:
-
-        for variable in dimensions:
-            cdfFrame = stMod.ECDF(population[variable].to_numpy())
-            ks = sp.ks_1samp(sample[variable], cdfFrame)
-            if ks[1] < ksScore:
-                return False
-
-        return True
-
     def _filterProjects(self):
         dataset = pd.DataFrame(self._df_data)
         dataset = dataset.drop_duplicates(subset=['url'])
@@ -468,7 +294,3 @@ class GithubGraphQL:
         for key, value in self._filters.items():
             dataset = dataset[dataset[key] >= value]
         dataset.to_csv(self._folderPath + "/frame.csv", index=False)
-
-
-
-

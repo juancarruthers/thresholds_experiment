@@ -50,6 +50,8 @@ def createStratifiedSample(folderPath: str, dimensions: list[str], ksScore = 0.2
 
     print("--- %s seconds ---" % (time.time() - start_time))
     stratified.to_csv(folderPath + "/stratified.csv", index=False)
+    groupDF = pd.DataFrame(SB.generateGroupsOutput(groups))
+    groupDF.to_csv(folderPath + "/groups.csv", index=False)
 
 def createSimpleRandomSample(folderPath: str):
     frame = pd.read_csv(folderPath + "/frame.csv")
@@ -67,13 +69,17 @@ def createSamples(folderPath: str, dimensions: list[str]):
     createDiverseSample(folderPath, dimensions)
     createStratifiedSample(folderPath, dimensions)
 
-def updateSample(frame: pd.DataFrame, sample: pd.DataFrame, folderPath: str, dimensions: list[str], queryFilter: str, secondFilter: dict, ksScore= 0.35):
+def updateSample(frame: pd.DataFrame, sample: pd.DataFrame, groups: pd.DataFrame, folderPath: str, dimensions: list[str], queryFilter: str, secondFilter: dict, ksScore= 0.2):
 
     projectUpdater = GQL(queryFilter, secondFilter, folderPath)
 
     maintenance = Maintenance(projectUpdater, dimensions, secondFilter['dateLastCommit'])
-    sample = maintenance.updateSampleDTDQ(frame, sample, ksScore)
-    sample.to_csv(folderPath + "/sampleUpdated.csv", index=False)
+    sampleDTDQ = maintenance.updateSampleDTDQ(frame, sample, ksScore)
+    sampleSTDQ = maintenance.updateSampleST(frame, sample, groups, ksScore, 'dynamic')
+    sampleSTSQ = maintenance.updateSampleST(frame, sample, groups, ksScore, 'static')
+    sampleDTDQ.to_csv(folderPath + "/sampleUpdatedDTDQ.csv", index=False)
+    sampleSTDQ.to_csv(folderPath + "/sampleUpdatedSTDQ.csv", index=False)
+    sampleSTSQ.to_csv(folderPath + "/sampleUpdatedSTSQ.csv", index=False)
     return sample
 
 
@@ -116,10 +122,13 @@ if __name__ == '__main__':
     dimensions = ['stargazerCount', 'forkCount', 'closedIssuesCount', 'totalSize', 'closedPullReqCount', 'commits']
 
 
-    #createStratifiedSample('./datasets/2022715', dimensions, 0.25)
-    sample = pd.read_csv("./datasets/20220901/sampleUpdated.csv")
+    #createStratifiedSample('./datasets/20220715', dimensions, 0.2)
+    sample = pd.read_csv("./datasets/20220715/stratified.csv")
+    groups = pd.read_csv("./datasets/20220715/groups.csv")
     frame = pd.read_csv(folderPath + "/frame.csv")
-    updateSample(frame, sample, folderPath, dimensions, queryFilter, secondFilter)
-    scoreSample(folderPath + '/sampleUpdated.csv', folderPath + '/frame.csv', dimensions)
+    updateSample(frame, sample, groups, folderPath, dimensions, queryFilter, secondFilter, .1)
+    scoreSample(folderPath + '/sampleUpdatedDTDQ.csv', folderPath + '/frame.csv', dimensions)
+    scoreSample(folderPath + '/sampleUpdatedSTDQ.csv', folderPath + '/frame.csv', dimensions)
+    scoreSample(folderPath + '/sampleUpdatedSTSQ.csv', folderPath + '/frame.csv', dimensions)
     print("FIN")
 
