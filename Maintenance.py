@@ -72,6 +72,8 @@ class Maintenance:
                     frameQuantity = int(group['sampleQty'])
                 elif STQ == 'dynamic':
                     frameQuantity = round(frameFiltered.shape[0] * 0.2)
+                    if frameQuantity == 0:
+                        frameQuantity = 1
 
                 sampleQuantity = sampleFiltered.shape[0]
                 difference = frameQuantity - sampleQuantity

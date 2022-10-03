@@ -69,18 +69,23 @@ def createSamples(folderPath: str, dimensions: list[str]):
     createDiverseSample(folderPath, dimensions)
     createStratifiedSample(folderPath, dimensions)
 
-def updateSample(frame: pd.DataFrame, sample: pd.DataFrame, groups: pd.DataFrame, folderPath: str, dimensions: list[str], queryFilter: str, secondFilter: dict, ksScore= 0.2):
-
+def updateSampleDTDQ(frame: pd.DataFrame, sample: pd.DataFrame, folderPath: str, dimensions: list[str], queryFilter: str, secondFilter: dict, ksScore= 0.2):
     projectUpdater = GQL(queryFilter, secondFilter, folderPath)
-
     maintenance = Maintenance(projectUpdater, dimensions, secondFilter['dateLastCommit'])
     sampleDTDQ = maintenance.updateSampleDTDQ(frame, sample, ksScore)
-    sampleSTDQ = maintenance.updateSampleST(frame, sample, groups, ksScore, 'dynamic')
-    sampleSTSQ = maintenance.updateSampleST(frame, sample, groups, ksScore, 'static')
     sampleDTDQ.to_csv(folderPath + "/sampleUpdatedDTDQ.csv", index=False)
+
+def updateSampleSTDQ(frame: pd.DataFrame, sample: pd.DataFrame, groups: pd.DataFrame, folderPath: str, dimensions: list[str], queryFilter: str, secondFilter: dict, ksScore= 0.2):
+    projectUpdater = GQL(queryFilter, secondFilter, folderPath)
+    maintenance = Maintenance(projectUpdater, dimensions, secondFilter['dateLastCommit'])
+    sampleSTDQ = maintenance.updateSampleST(frame, sample, groups, ksScore, 'dynamic')
     sampleSTDQ.to_csv(folderPath + "/sampleUpdatedSTDQ.csv", index=False)
+
+def updateSampleSTSQ(frame: pd.DataFrame, sample: pd.DataFrame, groups: pd.DataFrame, folderPath: str, dimensions: list[str], queryFilter: str, secondFilter: dict, ksScore=0.2):
+    projectUpdater = GQL(queryFilter, secondFilter, folderPath)
+    maintenance = Maintenance(projectUpdater, dimensions, secondFilter['dateLastCommit'])
+    sampleSTSQ = maintenance.updateSampleST(frame, sample, groups, ksScore, 'static')
     sampleSTSQ.to_csv(folderPath + "/sampleUpdatedSTSQ.csv", index=False)
-    return sample
 
 
 def scoreSample(samplePath: str, framePath: str, dimensions: list[str]):
@@ -118,9 +123,24 @@ if __name__ == '__main__':
     secondFilter = {'totalSize': 10000, 'dateLastCommit': str(oneMonthAgo), 'contributors': 3, 'closedIssuesCount': 50,
                     'closedPullReqCount': 50}
 
-    folderPath = "./datasets/20220915"
+    folderPath = "./datasets/20220928"
     dimensions = ['stargazerCount', 'forkCount', 'closedIssuesCount', 'totalSize', 'closedPullReqCount', 'commits']
 
+    frame = pd.read_csv(folderPath + '/frame.csv')
+    sampleFolder = './datasets/20220913'
+    groups = pd.read_csv('./datasets/20220715/groups.csv')
 
+    #createFrame(queryFilter, secondFilter)
+
+    #updateSamples(frame, sampleFolder, groups, folderPath, dimensions, queryFilter, secondFilter, 0.05)
+    updateSampleDTDQ(frame, pd.read_csv(sampleFolder + '/sampleUpdatedDTDQ.csv'), folderPath, dimensions, queryFilter, secondFilter, 0.3)
+    updateSampleSTDQ(frame, pd.read_csv(sampleFolder + '/sampleUpdatedSTDQ.csv'), groups, folderPath, dimensions, queryFilter, secondFilter, 0.05)
+    updateSampleSTSQ(frame, pd.read_csv(sampleFolder + '/sampleUpdatedSTSQ.csv'), groups, folderPath, dimensions, queryFilter, secondFilter, 0.05)
+    
+    
+    scoreSample('./datasets/20220715/stratified.csv', folderPath + '/frame.csv', dimensions)
+    scoreSample(folderPath + '/sampleUpdatedDTDQ.csv', folderPath + '/frame.csv', dimensions)
+    scoreSample(folderPath + '/sampleUpdatedSTDQ.csv', folderPath + '/frame.csv', dimensions)
+    scoreSample(folderPath + '/sampleUpdatedSTSQ.csv', folderPath + '/frame.csv', dimensions)
 
 
