@@ -3,5 +3,6 @@ env
 token
 graphs
 *.csv
+*.xlsx
 backup
 SM

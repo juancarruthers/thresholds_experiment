@@ -1,3 +1,4 @@
+import math
 import random
 import shutil
 import requests
@@ -6,6 +7,7 @@ import datetime
 import time
 import concurrent.futures
 import Utilities as util
+from dateutil import relativedelta
 
 class GithubGraphQL:
 
@@ -43,8 +45,8 @@ class GithubGraphQL:
                     repoCountSubQuery = self.makeRequest(repoCountQuery)['data']['search']['repositoryCount']
 
                     j = 1
-                    while (repoCountSubQuery >= 990) | (repoCountSubQuery == 0):
-                        if repoCountSubQuery >= 990:
+                    while (repoCountSubQuery >= 1000) | (repoCountSubQuery == 0):
+                        if repoCountSubQuery >= 1000:
                             self._sizeInc -= j
                         else:
                             self._sizeInc += j
@@ -86,7 +88,9 @@ class GithubGraphQL:
                 difference = finish - start
                 print('Start:', start, '- Finish:', datetime.datetime.now(), " -  Time:", difference)
 
-                self._filterProjects()
+                dataset = pd.DataFrame(self._df_data)
+                dataset = dataset.drop_duplicates(subset=['id'])
+                dataset.to_csv(self._folderPath + "/frame.csv", index=False)
                 shutil.rmtree('./.backup')
         except KeyboardInterrupt:
             self.quit = True
@@ -107,6 +111,8 @@ class GithubGraphQL:
             filtersFlag = self.updateIssues(properties, owner, repositoryName, filtersFlag)
             filtersFlag = self.updatePullRequests(properties, owner, repositoryName, filtersFlag)
             filtersFlag = self.updateContributors(properties, owner, repositoryName, filtersFlag)
+            filtersFlag = self.updateMunaiahMetrics(properties, owner, repositoryName, filtersFlag)
+            filtersFlag = self._evaluateMaintainability(properties, filtersFlag)
 
             print(datetime.datetime.now(), "- Owner:", owner, "- Repository:", repositoryName)
 
@@ -123,16 +129,17 @@ class GithubGraphQL:
             newJson = {"primaryLanguage": json['languages']['edges'][0]['node']['name'], "totalSize": json['languages']['totalSize']}
         else:
             newJson = {"primaryLanguage": "-", "totalSize": 0}
+
         json.pop('languages', None)
         json.update(newJson)
         return False
 
     def updateCommits(self, json: dict, filtersFlag: bool) -> bool:
-        dateLastCommit = json['defaultBranchRef']['target']['history']['nodes'][0]['committedDate']
-        if filtersFlag or dateLastCommit < self._filters['dateLastCommit']:
+        commits = json['defaultBranchRef']['target']['history']['totalCount']
+        if filtersFlag or commits < self._filters['commits']:
             return True
 
-        newJson = {"commits": json['defaultBranchRef']['target']['history']['totalCount'], "dateLastCommit": json['defaultBranchRef']['target']['history']['nodes'][0]['committedDate']}
+        newJson = {"commits": commits, "dateLastCommit": json['defaultBranchRef']['target']['history']['nodes'][0]['committedDate']}
         json.pop('defaultBranchRef', None)
         json.update(newJson)
         return False
@@ -156,12 +163,12 @@ class GithubGraphQL:
         else:
             newJson = {"closedIssuesCount": 0, "closedIssueLastDate": "-", "openIssuesCount": 0, "openIssueLastDate": "-"}
 
-        json.pop('issues', None)
-        json.update(newJson)
-
-        if json['closedIssuesCount'] < self._filters['closedIssuesCount']:
+        if newJson['closedIssuesCount'] < self._filters['closedIssuesCount']:
             return True
         else:
+
+            json.pop('issues', None)
+            json.update(newJson)
             return False
 
     '''
@@ -187,12 +194,14 @@ class GithubGraphQL:
         else:
             newJson = {"closedPullReqCount": 0, "closedPullReqLastDate": "-", "mergedPullReqCount": 0, "mergedPullReqLastDate": "-", "openPullReqCount": 0, "openPullReqLastDate": "-"}
 
-        json.pop('pullRequests', None)
-        json.update(newJson)
+        pullReqCount = newJson['closedPullReqCount'] + newJson['mergedPullReqCount']
 
-        if json['closedPullReqCount'] < self._filters['closedPullReqCount']:
+        if pullReqCount < self._filters['pullReqCount']:
             return True
         else:
+
+            json.pop('pullRequests', None)
+            json.update(newJson)
             return False
 
     def updateContributors(self, json: dict, owner: str, repoName: str, filtersFlag: bool):
@@ -203,23 +212,82 @@ class GithubGraphQL:
         url = "https://api.github.com/repos/" + owner + "/" + repoName + "/contributors?per_page="+ self._elementPerPageContribQuery +"&page="
         i = 1
         response = self.makeRequest("", "GET", url + str(i))
+        acum = 0
+        contribAcum = 0
 
-        if not(type(response) is list):
-            acum = 1000
-        else:
-            acum = 0
+        if type(response) is list:
 
             while len(response) > 0:
                 acum += len(response)
                 i += 1
+                for contributor in response:
+                    contribAcum += contributor['contributions']
                 response = self.makeRequest("", "GET", url + str(i))
 
-        json.update({"contributors": acum})
-
-        if json['contributors'] < self._filters['contributors']:
+        if acum < self._filters['contributors']:
             return True
         else:
+            json.update({"contributors": acum, "contributions": contribAcum})
             return False
+
+    def coreContributors (self, json: dict, owner: str, repoName: str) -> int:
+        url = "https://api.github.com/repos/" + owner + "/" + repoName + "/contributors?per_page=" + self._elementPerPageContribQuery + "&page="
+        i = 1
+        response = self.makeRequest("", "GET", url + str(i))
+        coreContributors = 0
+        contributed = 0
+        j = 0
+
+        if type(response) is list:
+
+            while contributed < 0.8:
+                i += 1
+                while j < len(response) and contributed < 0.8:
+                    coreContributors += 1
+                    contributed += response[j]['contributions'] / json['contributions']
+                    j += 1
+                j = 0
+                response = self.makeRequest("", "GET", url + str(i))
+
+        json.pop('contributions', None)
+        return coreContributors
+
+
+
+    def updateMunaiahMetrics(self, json: dict, owner: str, repoName: str, filtersFlag: bool) -> bool:
+        if filtersFlag:
+            return True
+
+        dateOfCreation = json['createdAt']
+        dateLastCommit = json['dateLastCommit']
+        fmt = '%Y-%m-%dT%H:%M:%SZ'
+        tstamp1 = datetime.datetime.strptime(dateOfCreation, fmt)
+        tstamp2 = datetime.datetime.strptime(dateLastCommit, fmt)
+
+        delta = relativedelta.relativedelta(tstamp2, tstamp1).months + relativedelta.relativedelta(tstamp2, tstamp1).years * 12
+
+        history = math.trunc(json['commits'] / delta)
+        issueFreq = math.trunc((json['closedIssuesCount'] + json['openIssuesCount']) / delta)
+        coreContributors = self.coreContributors(json, owner, repoName)
+
+        filtersFlag = history <= self._filters['history']
+        filtersFlag = filtersFlag | (issueFreq <= self._filters['issueFrequency'])
+        filtersFlag = filtersFlag | (coreContributors <= self._filters['coreContributors'])
+
+        if filtersFlag:
+            return True
+        else:
+            json.update({"history": history, 'issueFrequency': issueFreq, 'coreContributors': coreContributors})
+            return False
+
+    def _evaluateMaintainability(self, json: dict, filtersFlag: bool) -> bool:
+        if filtersFlag:
+            return True
+
+        dateLastCommitCond = json['dateLastCommit'] < self._filters['dateLastCommit']
+        dateLastPullReq = json['closedPullReqLastDate'] < self._filters['dateLastPullReq'] and json['closedPullReqLastDate'] < self._filters['dateLastPullReq']
+
+        return dateLastCommitCond and dateLastPullReq
 
 
     def makeRequest (self, query: str | dict, reqType="POST", url='https://api.github.com/graphql') -> dict:
@@ -228,7 +296,14 @@ class GithubGraphQL:
         response, condition = self._requestCondition(query, reqType, url, headers)
 
         while condition:
+            print(response)
+            if "or it could be a GitHub bug" in str(condition):
+                variables : dict = query['variables']
+                first = round(variables['first']/2)
+                query['variables']['first'] = first
+
             time.sleep(random.choice(self._reqSleepTime))
+            headers = {'Authorization': 'Bearer ' + random.choice(self._tokens)}
             response, condition = self._requestCondition(query, reqType, url, headers)
 
         return response
@@ -255,10 +330,3 @@ class GithubGraphQL:
             print(err)
             exit()
 
-    def _filterProjects(self):
-        dataset = pd.DataFrame(self._df_data)
-        dataset = dataset.drop_duplicates(subset=['url'])
-
-        for key, value in self._filters.items():
-            dataset = dataset[dataset[key] >= value]
-        dataset.to_csv(self._folderPath + "/frame.csv", index=False)

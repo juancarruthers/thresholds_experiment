@@ -9,14 +9,14 @@ import statsmodels.distributions.empirical_distribution as stMod
 import scipy.stats as sp
 from Maintenance import Maintenance
 
-def createFrame(queryFilter: str, secondFilter: dict):
+def createFrame(queryFilter: str, secondFilter: dict, savethreshold = 5000, p_itemsPageMainQuery = 30):
     today = datetime.date.today()
 
     folderPath = "./datasets/" + str(today.year) + str(today.month) + str(today.day)
     if not (os.path.isdir(folderPath)):
         os.mkdir(folderPath)
 
-    projectRetriever = GQL(queryFilter, secondFilter, folderPath)
+    projectRetriever = GQL(queryFilter, secondFilter, folderPath, p_saveThreshold=savethreshold, p_itemsPageMainQuery=p_itemsPageMainQuery)
     projectRetriever.main()
 
 def updateFrame(folderPath: str, queryFilter: str, secondFilter: dict, dimensions: list[str]):
@@ -30,14 +30,14 @@ def updateFrame(folderPath: str, queryFilter: str, secondFilter: dict, dimension
     frame.to_csv(folderPath + "/frameUpdated.csv", index=False)
     return frame
 
-def createStratifiedSample(folderPath: str, dimensions: list[str], ksScore = 0.25):
+def createStratifiedSample(folderPath: str, dimensions: list[str], sampleSize: int, ksScore = 0.05):
     start_time = time.time()
     frame = pd.read_csv(folderPath + "/frame.csv")
     stratified = pd.DataFrame()
 
     hypRejected = True
     while hypRejected:
-        stratified, groups = SB.createStratifiedSample(frame, dimensions)
+        stratified, groups = SB.createStratifiedSample(frame, dimensions, sampleSize)
         for variable in dimensions:
             cdfFrame = stMod.ECDF(frame[variable].to_numpy())
             ks = sp.ks_1samp(stratified[variable], cdfFrame)
@@ -50,12 +50,13 @@ def createStratifiedSample(folderPath: str, dimensions: list[str], ksScore = 0.2
 
     print("--- %s seconds ---" % (time.time() - start_time))
     stratified.to_csv(folderPath + "/stratified.csv", index=False)
-    groupDF = pd.DataFrame(SB.generateGroupsOutput(groups))
+    proportion = stratified.shape[0] / frame.shape[0]
+    groupDF = pd.DataFrame(SB.generateGroupsOutput(groups, proportion))
     groupDF.to_csv(folderPath + "/groups.csv", index=False)
 
-def createSimpleRandomSample(folderPath: str):
+def createSimpleRandomSample(folderPath: str, sampleSize: int):
     frame = pd.read_csv(folderPath + "/frame.csv")
-    simpleRandom = SB.createSimpleRandomSample(frame)
+    simpleRandom = SB.createSimpleRandomSample(frame, sampleSize)
     simpleRandom.to_csv(folderPath + "/simpleRandom.csv", index=False)
 
 def createDiverseSample(folderPath: str, dimensions: list[str]):
@@ -93,7 +94,10 @@ def scoreSample(samplePath: str, framePath: str, dimensions: list[str]):
     frame = pd.read_csv(framePath)
     dScore, rScore = SB.testSampleDiversityRepresentativeness(sample, frame, dimensions)
     nullHypRej = len(rScore[1])
-    print('Diversity Score:', dScore, ' -Null Hypotesis Rejected:', nullHypRej)
+
+    print('Diversity Score:', dScore)
+    for variable in rScore[0]:
+        print(variable['dimension'] + ' - p-value: ' + str(variable['p-value']))
 
 
 def compareWaves():
@@ -119,28 +123,48 @@ if __name__ == '__main__':
     oneYearAgo = today - relativedelta(years=1)
     oneMonthAgo = today - relativedelta(months=1)
 
-    queryFilter = "is:public, language:java, archived:false, mirror:false, forks:>=10, created:<=" + str(oneYearAgo)
-    secondFilter = {'totalSize': 10000, 'dateLastCommit': str(oneMonthAgo), 'contributors': 3, 'closedIssuesCount': 50,
-                    'closedPullReqCount': 50}
+    queryFilter = "is:public, language:java, archived:false, mirror:false, forks:>=10, stars:>=10, created:<=" + str(oneYearAgo)
+    secondFilter = {'totalSize': 10000, 'closedIssuesCount': 50, 'pullReqCount': 50, 'commits': 1000,
+                    'contributors': 0,  'coreContributors': 0, 'history': 0, 'issueFrequency': 0,
+                    'dateLastPullReq': '2010-01-01', 'dateLastCommit': '2010-01-01'}
 
-    folderPath = "./datasets/20220928"
-    dimensions = ['stargazerCount', 'forkCount', 'closedIssuesCount', 'totalSize', 'closedPullReqCount', 'commits']
+    folderPath = "./datasets/prueba"
+    dimensions = ['stargazerCount', 'forkCount', 'totalSize', 'commits', 'closedIssuesCount', 'contributors']
 
     frame = pd.read_csv(folderPath + '/frame.csv')
-    sampleFolder = './datasets/20220913'
-    groups = pd.read_csv('./datasets/20220715/groups.csv')
+    #sampleFolder = './datasets/20220913'
+    #groups = pd.read_csv('./datasets/20220715/groups.csv')
+
+    createStratifiedSample(folderPath, dimensions, 293)
+    #createSimpleRandomSample(folderPath, 293)
+    #createDiverseSample(folderPath, dimensions)
+    #scoreSample(folderPath + '/simpleRandom.csv', folderPath + '/frame.csv', dimensions)
+    #scoreSample(folderPath + '/diverse.csv', folderPath + '/frame.csv', dimensions)
+    #scoreSample(folderPath + '/stratified.csv', folderPath + '/frame.csv', dimensions)
 
     #createFrame(queryFilter, secondFilter)
 
+    '''
+    createFrame(queryFilter, secondFilter)
+
+    
     #updateSamples(frame, sampleFolder, groups, folderPath, dimensions, queryFilter, secondFilter, 0.05)
     updateSampleDTDQ(frame, pd.read_csv(sampleFolder + '/sampleUpdatedDTDQ.csv'), folderPath, dimensions, queryFilter, secondFilter, 0.3)
     updateSampleSTDQ(frame, pd.read_csv(sampleFolder + '/sampleUpdatedSTDQ.csv'), groups, folderPath, dimensions, queryFilter, secondFilter, 0.05)
     updateSampleSTSQ(frame, pd.read_csv(sampleFolder + '/sampleUpdatedSTSQ.csv'), groups, folderPath, dimensions, queryFilter, secondFilter, 0.05)
     
-    
-    scoreSample('./datasets/20220715/stratified.csv', folderPath + '/frame.csv', dimensions)
-    scoreSample(folderPath + '/sampleUpdatedDTDQ.csv', folderPath + '/frame.csv', dimensions)
-    scoreSample(folderPath + '/sampleUpdatedSTDQ.csv', folderPath + '/frame.csv', dimensions)
-    scoreSample(folderPath + '/sampleUpdatedSTSQ.csv', folderPath + '/frame.csv', dimensions)
+
+    folderPath2 = "./datasets/longStudy"
+    sample = folderPath + '/simpleRandom.csv'
+
+    scoreSample(sample, folderPath + '/frame.csv', dimensions)
+    scoreSample(sample, folderPath2 + '/20221004/frame.csv', dimensions)
+    scoreSample(sample, folderPath2 + '/20221017/frame.csv', dimensions)
+    scoreSample(sample, folderPath2 + '/20221101/frame.csv', dimensions)
+    scoreSample(sample, folderPath2 + '/20221115/frame.csv', dimensions)
+    scoreSample(sample, folderPath2 + '/20221206/frame.csv', dimensions)
+    '''
+
+
 
 

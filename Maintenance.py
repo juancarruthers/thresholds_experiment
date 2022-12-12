@@ -107,6 +107,7 @@ class Maintenance:
 
         DS = DiversityScore(frame, self._dimensions)
         groups, outliers = DS.clusterizePopulation(sampleArray, populationArray)
+        proportion = SB.sampleSize(frame.size)
         groups = SB.generateGroupsOutput(groups)
         groupsDF = pd.DataFrame(groups)
 

@@ -5,11 +5,11 @@ import statsmodels.distributions.empirical_distribution as stMod
 import random as rd
 from DiversityScore import DiversityScore
 
-def createSimpleRandomSample(dataset: pd.DataFrame, proportion=0.2) -> pd.DataFrame:
-    sample = dataset.sample(int(len(dataset) * proportion))
+def createSimpleRandomSample(dataset: pd.DataFrame, numberElements: int) -> pd.DataFrame:
+    sample = dataset.sample(numberElements)
     return sample
 
-def createStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], proportion=0.2, configuration=[]) -> tuple[pd.DataFrame, list]:
+def createStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], numberElements: int, configuration=[]) -> tuple[pd.DataFrame, list]:
     clusterizer = DiversityScore(dataset, dimensions, configuration)
     diverseSample = createDiverseSample(dataset, dimensions)
 
@@ -27,8 +27,9 @@ def createStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], proport
     groups, outliers = clusterizer.clusterizePopulation(sampleArray, populationArray)
     sample: list = sampleArray.tolist()
 
+    proportion = (numberElements - len(groups)) / dataset.shape[0]
     for group in groups:
-        qty = round(group['groupQty'] * proportion) - 1
+        qty = round(group['groupQty'] * proportion)
 
         if qty > 0:
             groupSample = rd.sample(group['similarProjects'], qty)
@@ -40,6 +41,11 @@ def createStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], proport
     df.columns = col_headers
     return df, groups
 
+def sampleSize(populationSize: int, zscore=1.96, error= 0.05, sd = 0.5) -> int:
+    a = pow(zscore, 2) * sd * (1-sd)
+    numerator = a / pow(error, 2)
+    denominator = (a / pow(error, 2) * populationSize) + 1
+    return round(numerator / denominator)
 
 def createDiverseSample(dataset: pd.DataFrame, dimensions: list[str], configuration=[], sample=pd.DataFrame()) -> pd.DataFrame:
     diversityScore = DiversityScore(dataset, dimensions, configuration)
@@ -100,7 +106,7 @@ def testSampleKS(sample: pd.DataFrame, population: pd.DataFrame, variables: list
     return variablesValues, varHypRejected
 
 
-def generateGroupsOutput(stratifiedSampleGroups: list, proportion = 0.2) -> pd.DataFrame:
+def generateGroupsOutput(stratifiedSampleGroups: list, proportion: float) -> pd.DataFrame:
     groups = stratifiedSampleGroups.copy()
 
     for group in groups:
