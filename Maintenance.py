@@ -1,3 +1,6 @@
+import random
+
+import numpy as np
 import pandas as pd
 import SampleBuilder as SB
 from DiversityScore import DiversityScore
@@ -46,6 +49,51 @@ class Maintenance:
 
         return frame
 
+
+    def updateSample(self, frame:pd.DataFrame, sample: pd.DataFrame, ksScore = 0.2) -> pd.DataFrame:
+        sampleUpdated: pd.DataFrame = frame[frame['id'].isin(sample['id'])].reset_index(drop=True)
+        sampleExcluded: pd.DataFrame = sample[~sample['id'].isin(sampleUpdated['id'])].reset_index(drop=True)
+        frameWithOutUpdated: pd.DataFrame = frame[~frame['id'].isin(sampleUpdated['id'])].reset_index(drop=True)
+
+        DS = DiversityScore(frameWithOutUpdated, self._dimensions)
+
+        dimensionsKeysSam = []
+        dimensionsKeysPop = []
+        similar = []
+        for dimension in self._dimensions:
+            dimensionsKeysSam.append(sample.columns.get_loc(dimension))
+            dimensionsKeysPop.append(frameWithOutUpdated.columns.get_loc(dimension))
+
+        sampArray = sampleExcluded.to_numpy()
+        frameWithOutUpdatedArray = frameWithOutUpdated.to_numpy()
+
+        for project in sampArray:
+            projScore = DS.scoreProject(project, frameWithOutUpdated.shape[0], len(self._dimensions), dimensionsKeysSam, dimensionsKeysPop, frameWithOutUpdatedArray)[1]
+            projScoreDF = pd.DataFrame(projScore)
+            similarProj = frameWithOutUpdated[frameWithOutUpdated.index.isin(projScoreDF[projScoreDF[0]].index.values)].reset_index(drop=True)
+            similar.append(similarProj)
+
+        representative = False
+        sampleUpdatedAux = pd.DataFrame()
+        while not (representative):
+            sampleUpdatedAux = sampleUpdated.copy()
+            frameWithOutUpdatedAux = frameWithOutUpdated.copy()
+            for projects in similar:
+                projects = projects[~projects['id'].isin(sampleUpdatedAux['id'])]
+                if projects.shape[0] > 0:
+                    randProj = projects.sample(1, ignore_index=True)
+                else:
+                    randProj = frameWithOutUpdatedAux.sample(1, ignore_index=True)
+                sampleUpdatedAux = pd.concat([sampleUpdatedAux, randProj], ignore_index=True)
+                frameWithOutUpdatedAux = frameWithOutUpdatedAux[frameWithOutUpdatedAux['id'] != randProj['id'][0]]
+
+            sampleSize = SB.sampleSize(frame.shape[0])
+            completeSample = frameWithOutUpdatedAux.sample(sampleSize - sampleUpdatedAux.shape[0])
+            sampleUpdatedAux = pd.concat([sampleUpdatedAux, completeSample], ignore_index=True)
+
+            representative = self.testRepresentativeness(sampleUpdatedAux, frame, ksScore)
+
+        return sampleUpdatedAux
 
     def updateSampleST(self, frame:pd.DataFrame, sample: pd.DataFrame, groups: pd.DataFrame, ksScore = 0.2, STQ = 'dynamic') -> pd.DataFrame:
 
@@ -107,8 +155,8 @@ class Maintenance:
 
         DS = DiversityScore(frame, self._dimensions)
         groups, outliers = DS.clusterizePopulation(sampleArray, populationArray)
-        proportion = SB.sampleSize(frame.size)
-        groups = SB.generateGroupsOutput(groups)
+        proportion = SB.sampleSize(frame.shape[0]) / frame.shape[0]
+        groups = SB.generateGroupsOutput(groups, proportion)
         groupsDF = pd.DataFrame(groups)
 
         while not (representative):

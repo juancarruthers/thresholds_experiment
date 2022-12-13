@@ -41,10 +41,10 @@ def createStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], numberE
     df.columns = col_headers
     return df, groups
 
-def sampleSize(populationSize: int, zscore=1.96, error= 0.05, sd = 0.5) -> int:
+def sampleSize(populationSize: int, zscore=2, error= 0.05, sd = 0.5) -> int:
     a = pow(zscore, 2) * sd * (1-sd)
-    numerator = a / pow(error, 2)
-    denominator = (a / pow(error, 2) * populationSize) + 1
+    numerator = a * populationSize
+    denominator = a + populationSize * pow(error, 2)
     return round(numerator / denominator)
 
 def createDiverseSample(dataset: pd.DataFrame, dimensions: list[str], configuration=[], sample=pd.DataFrame()) -> pd.DataFrame:

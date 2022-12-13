@@ -129,13 +129,13 @@ if __name__ == '__main__':
                     'dateLastPullReq': '2010-01-01', 'dateLastCommit': '2010-01-01'}
 
     folderPath = "./datasets/prueba"
-    dimensions = ['stargazerCount', 'forkCount', 'totalSize', 'commits', 'closedIssuesCount', 'contributors']
+    dimensions = ['stargazerCount', 'forkCount', 'totalSize', 'commits', 'closedIssuesCount', 'contributors', "pullReqCount"]
 
     frame = pd.read_csv(folderPath + '/frame.csv')
     #sampleFolder = './datasets/20220913'
     #groups = pd.read_csv('./datasets/20220715/groups.csv')
 
-    createStratifiedSample(folderPath, dimensions, 293)
+    #createStratifiedSample(folderPath, dimensions, 293)
     #createSimpleRandomSample(folderPath, 293)
     #createDiverseSample(folderPath, dimensions)
     #scoreSample(folderPath + '/simpleRandom.csv', folderPath + '/frame.csv', dimensions)
@@ -144,8 +144,13 @@ if __name__ == '__main__':
 
     #createFrame(queryFilter, secondFilter)
 
+    projectUpdater = GQL(queryFilter, secondFilter, folderPath)
+    maintenance = Maintenance(projectUpdater, dimensions, secondFilter['dateLastCommit'])
+    sampleSTSQ = maintenance.updateSample(pd.read_csv('./datasets/longStudy/20221206/frame.csv'), pd.read_csv('./datasets/prueba/simpleRandom.csv'), ksScore=0.35)
+    sampleSTSQ.to_csv(folderPath + "/sampleUpdatedSTSQ.csv", index=False)
+
     '''
-    createFrame(queryFilter, secondFilter)
+    
 
     
     #updateSamples(frame, sampleFolder, groups, folderPath, dimensions, queryFilter, secondFilter, 0.05)
@@ -153,7 +158,7 @@ if __name__ == '__main__':
     updateSampleSTDQ(frame, pd.read_csv(sampleFolder + '/sampleUpdatedSTDQ.csv'), groups, folderPath, dimensions, queryFilter, secondFilter, 0.05)
     updateSampleSTSQ(frame, pd.read_csv(sampleFolder + '/sampleUpdatedSTSQ.csv'), groups, folderPath, dimensions, queryFilter, secondFilter, 0.05)
     
-
+    
     folderPath2 = "./datasets/longStudy"
     sample = folderPath + '/simpleRandom.csv'
 

@@ -39,7 +39,7 @@ class DiversityScore:
             similarityScore.append(projectSample == project)
         return similarityScore, [projectSample]
 
-    def _similarityScore(self, projectDimValue: int | float | str, populationDimValues: np.array, similarityFunction)-> tuple[list[bool], list]:
+    def similarityScore(self, projectDimValue: int | float | str, populationDimValues: np.array, similarityFunction)-> tuple[list[bool], list]:
         valueType = type(projectDimValue)
         similarityScore: list[bool]
         thresholds: list
@@ -81,18 +81,8 @@ class DiversityScore:
 
         if projSamCount > 0:
             for project in sampleArray:
-                projectIndexSet = np.full((1, projPopCount), True)[0]
-
-                for i in range(dimensionCount):
-
-                    confDim = None
-                    if len(self.configuration) != 0:
-                        confDim = self.configuration[i]
-                    similarityScore = self._similarityScore(project[dimensionsKeysSam[i]], populationArray[:, dimensionsKeysPop[i]], confDim)[0]
-
-                    dimIndexMatrix[i, :] = dimIndexMatrix[i, :] | similarityScore
-                    projectIndexSet = projectIndexSet & similarityScore
-
+                dimIndexMatrixOUTPUT, projectIndexSet = self.scoreProject(project, projPopCount, dimensionCount, dimensionsKeysSam, dimensionsKeysPop, populationArray)
+                dimIndexMatrix = dimIndexMatrix | dimIndexMatrixOUTPUT
                 indexSet = indexSet | projectIndexSet
 
         score = np.bincount(indexSet)[1]/projPopCount
@@ -102,6 +92,22 @@ class DiversityScore:
             dimScore.append(np.bincount(dimIndexMatrix[i])[1]/projPopCount)
 
         return score, dimScore, indexSet
+
+    def scoreProject(self, project: np.array, projPopCount: int,  dimensionCount: int, dimensionsKeysSam, dimensionsKeysPop, populationArray):
+
+        projectIndexSet = np.full((1, projPopCount), True)[0]
+        dimIndexMatrix = np.full((dimensionCount, projPopCount), False)
+
+        for i in range(dimensionCount):
+
+            confDim = None
+            if len(self.configuration) != 0:
+                confDim = self.configuration[i]
+            similarityScore = self.similarityScore(project[dimensionsKeysSam[i]], populationArray[:, dimensionsKeysPop[i]], confDim)[0]
+
+            dimIndexMatrix[i, :] = dimIndexMatrix[i, :] | similarityScore
+            projectIndexSet = projectIndexSet & similarityScore
+        return dimIndexMatrix, projectIndexSet
 
     def clusterizePopulation(self, diverseSample: np.array, population: np.ndarray) -> tuple[list, np.array]:
         dimensionsKeys = []
@@ -120,7 +126,7 @@ class DiversityScore:
                 confDim = None
                 if len(self.configuration) != 0:
                     confDim = self.configuration[i]
-                result = self._similarityScore(project[dimKey], population[:, dimKey], confDim)
+                result = self.similarityScore(project[dimKey], population[:, dimKey], confDim)
                 similarityScore = result[0]
                 thresholds.append({self.dimensions[i]: result[1]})
 
