@@ -11,7 +11,7 @@ def createSimpleRandomSample(dataset: pd.DataFrame, numberElements: int) -> pd.D
 
 def createStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], numberElements: int, configuration=[]) -> tuple[pd.DataFrame, list]:
     clusterizer = DiversityScore(dataset, dimensions, configuration)
-    diverseSample = createDiverseSample(dataset, dimensions)
+    diverseSample = createDiverseSample(dataset, dimensions, configuration)
 
     cont = 0
     for column in diverseSample.columns.to_list():
@@ -19,23 +19,38 @@ def createStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], numberE
             break
         cont += 1
 
-    dataset = dataset[~dataset['id'].isin(diverseSample['id'])]
-
-    sampleArray = diverseSample.to_numpy()
-    populationArray = dataset.to_numpy()
-
-    groups, outliers = clusterizer.clusterizePopulation(sampleArray, populationArray)
-    sample: list = sampleArray.tolist()
+    groups, outliers = clusterizer.clusterizePopulation(diverseSample, dataset)
+    diverseSampleList = diverseSample.drop(columns=['matrix']).values.tolist()
+    sample = []
 
     proportion = (numberElements - len(groups)) / dataset.shape[0]
+    remainings = []
     for group in groups:
-        qty = round(group['groupQty'] * proportion)
+        realQty = (group['groupQty'] - 1) * proportion
+
+        qty = round(realQty)
+
+        if (realQty > qty):
+            proj = rd.sample(list(enumerate(group['similarProjects'])), 1)
+            group['similarProjects'].pop(proj[0][0])
+            remainings.append(proj[0][1])
 
         if qty > 0:
             groupSample = rd.sample(group['similarProjects'], qty)
             sample += groupSample
+
         group.pop('similarProjects')
 
+    sizeCorrection = numberElements - len(sample) - len(diverseSampleList)
+    if (sizeCorrection > 0):
+        sample += rd.sample(remainings, sizeCorrection)
+    elif (sizeCorrection < 0):
+        sizeCorrection *= -1
+        projects = rd.sample(list(enumerate(sample)), sizeCorrection)
+        for project in projects:
+            sample.pop(project[0])
+
+    sample += diverseSampleList
     col_headers = dataset.columns.to_list()
     df = pd.DataFrame(sample)
     df.columns = col_headers
@@ -47,39 +62,36 @@ def sampleSize(populationSize: int, zscore=2, error= 0.05, sd = 0.5) -> int:
     denominator = a + populationSize * pow(error, 2)
     return round(numerator / denominator)
 
-def createDiverseSample(dataset: pd.DataFrame, dimensions: list[str], configuration=[], sample=pd.DataFrame()) -> pd.DataFrame:
+def createDiverseSample(dataset: pd.DataFrame, dimensions: list[str], configuration=[], sample=pd.DataFrame()) -> pd.DataFrame :
     diversityScore = DiversityScore(dataset, dimensions, configuration)
-    projectScores = diversityScore.scoreProjectsSorted()
-    diversityScoreCol = projectScores.columns.get_loc('diversityScore')
-    similarityMatrixCol = projectScores.columns.get_loc('similarityMatrix')
+    projectScores = diversityScore.scoreProjects()
+    diversityScoreCol: int = projectScores.columns.get_loc('diversityScore')
+    similarityMatrixCol : int = projectScores.columns.get_loc('similarityMatrix')
     populationArray = projectScores.to_numpy()
     projCount = populationArray[:, 0].size
 
-    populationCovered = populationArray[0, similarityMatrixCol]
-    sampleScore = populationArray[0, diversityScoreCol]
-    sampleArray = [populationArray[0, :]]
+    sampleArray = []
 
-    if sample.shape[0] > 0:
-        sampleScore = diversityScore.scoreSample(sample)
-        populationCovered = sampleScore[2]
-        sampleScore = sampleScore[0]
-        sampleArray = []
-        for index, project in diversityScore.scoreProjectsSorted(sample).iterrows():
-            sampleArray.append(project.to_numpy())
+    while len(populationArray) > 0:
+        newArray = populationArray.copy()[populationArray[:, diversityScoreCol].argsort()][::-1][:projCount]
+        id = newArray[0, :][0]
+        score = projectScores[projectScores['id'] == id]['similarityMatrix'].values
+        sampleArray.append(np.concatenate((newArray[0, :], score), axis=0))
+        #sampleScore += newArray[0, diversityScoreCol]
 
+        lastInsert = sampleArray[len(sampleArray) - 1][similarityMatrixCol]
+        ids = np.where(lastInsert)[0]
+        populationArray = np.delete(populationArray, ids, axis=0)
+        projCount = populationArray[:, 0].size
+        populationCovered = np.full((1, projCount), False)[0]
 
-    while sampleScore < 1:
         for project in populationArray:
+            project[similarityMatrixCol] = np.delete(project[similarityMatrixCol], ids)
             project[similarityMatrixCol] = project[similarityMatrixCol] | populationCovered
-            project[diversityScoreCol] = np.bincount(project[similarityMatrixCol])[1]/projCount - sampleScore
-
-        newArray = populationArray[populationArray[:, diversityScoreCol].argsort()]
-        populationArray = newArray
-        sampleArray.append(populationArray[projCount - 1, :])
-        sampleScore += populationArray[projCount - 1, diversityScoreCol]
-        populationCovered = populationArray[projCount - 1, similarityMatrixCol]
+            project[diversityScoreCol] = np.bincount(project[similarityMatrixCol])[1]/projCount
 
     col_headers = projectScores.columns.to_list()
+    col_headers.append('matrix')
     df = pd.DataFrame(sampleArray)
     df.columns = col_headers
     df = df.drop(columns=['diversityScore', 'similarityMatrix'])
@@ -106,19 +118,23 @@ def testSampleKS(sample: pd.DataFrame, population: pd.DataFrame, variables: list
     return variablesValues, varHypRejected
 
 
-def generateGroupsOutput(stratifiedSampleGroups: list, proportion: float) -> pd.DataFrame:
+def generateGroupsOutput(stratifiedSampleGroups: list, sample: pd.DataFrame) -> pd.DataFrame:
     groups = stratifiedSampleGroups.copy()
-
+    sampleAux = sample.copy()
     for group in groups:
-        group['sampleQty'] = round(group['groupQty'] * proportion)
-        if group['sampleQty'] == 0:
-            group['sampleQty'] = 1
+        sample2 = sampleAux.copy()
+
         thresholds: dict = group['thresholds']
         for threshold in thresholds:
             key = list(threshold.keys())[0]
             values = list(threshold.values())[0]
             group[key + 'Min'] = values[0]
             group[key + 'Max'] = values[1]
+            sample2 = sample2[values[0] <= sample2[key]]
+            sample2 = sample2[values[1] >= sample2[key]]
+
+        group['sampleQty'] = sample2.shape[0]
+        sampleAux = sampleAux[~sampleAux.isin(sample2)]
 
     groupsDataframe = pd.DataFrame(groups)
     groupsDataframe.pop('thresholds')
@@ -132,3 +148,5 @@ def getProjectGroup (project: dict, groups: pd.DataFrame, dimensions: list[str])
         groups = groups[dimValue <= groups[dimension + 'Max']]
 
     return groups['groupId']
+
+

@@ -1,59 +1,26 @@
-import random
-
-import numpy as np
 import pandas as pd
 import SampleBuilder as SB
 from DiversityScore import DiversityScore
 import scipy.stats as sp
 import statsmodels.distributions.empirical_distribution as stMod
 from GithubGraphQL import GithubGraphQL
-import Utilities as util
 
 
 class Maintenance:
 
-    def __init__(self, p_GQL: GithubGraphQL, p_dimensions: list[str], p_dateLastCommit: str):
+    def __init__(self, p_GQL: GithubGraphQL, p_dimensions: list[str]):
         self._GQL = p_GQL
         self._dimensions = p_dimensions
-        self._dateLastCommit = p_dateLastCommit
-
-    def _updateProject(self, project, repoDataQuery)-> bool | dict:
-        variables = {'repoName': project['name'], 'owner': project['owner']}
-        repoUpdate = {'query': repoDataQuery, 'variables': variables}
-        jsonResponse = self._GQL.makeRequest(repoUpdate)['data']['repository']
-        self._GQL.updateLanguage(jsonResponse, False)
-        result = self._GQL.updateCommits(jsonResponse, False)
-
-        if result:
-            return False
-
-        else:
-            jsonResponse["owner"] = project['owner']
-            self._GQL.updateIssues(jsonResponse, project['owner'], project['name'], False)
-            self._GQL.updatePullRequests(jsonResponse, project['owner'], project['name'], False)
-            self._GQL.updateContributors(jsonResponse, project['owner'], project['name'], False)
-            return jsonResponse
 
 
-    def updateFrame(self, frame: pd.DataFrame) -> pd.DataFrame:
-        repoDataQuery = util.readFile("./APIQueries/repositoryUpdate")
-        frameFiltered = frame[frame['dateLastCommit'] < self._dateLastCommit]
-        for id, project in frameFiltered.iterrows():
-            jsonResponse = self._updateProject(project, repoDataQuery)
-            if jsonResponse:
-                newRow = pd.Series(jsonResponse)
-                frame.loc[id] = newRow
-
-            else:
-                frame.drop(id, inplace=True)
-
-        return frame
-
-
-    def updateSample(self, frame:pd.DataFrame, sample: pd.DataFrame, ksScore = 0.2) -> pd.DataFrame:
+    def updateSampleDR(self, frame:pd.DataFrame, sample: pd.DataFrame, sampleExpectedSize = 0, ksScore = 0.05) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         sampleUpdated: pd.DataFrame = frame[frame['id'].isin(sample['id'])].reset_index(drop=True)
         sampleExcluded: pd.DataFrame = sample[~sample['id'].isin(sampleUpdated['id'])].reset_index(drop=True)
         frameWithOutUpdated: pd.DataFrame = frame[~frame['id'].isin(sampleUpdated['id'])].reset_index(drop=True)
+
+        sampleSize = sampleExpectedSize
+        if sampleExpectedSize == 0:
+            sampleSize = SB.sampleSize(frame.shape[0])
 
         DS = DiversityScore(frameWithOutUpdated, self._dimensions)
 
@@ -87,23 +54,38 @@ class Maintenance:
                 sampleUpdatedAux = pd.concat([sampleUpdatedAux, randProj], ignore_index=True)
                 frameWithOutUpdatedAux = frameWithOutUpdatedAux[frameWithOutUpdatedAux['id'] != randProj['id'][0]]
 
-            sampleSize = SB.sampleSize(frame.shape[0])
-            completeSample = frameWithOutUpdatedAux.sample(sampleSize - sampleUpdatedAux.shape[0])
-            sampleUpdatedAux = pd.concat([sampleUpdatedAux, completeSample], ignore_index=True)
+            sizeCorrection = sampleSize - sampleUpdatedAux.shape[0]
+
+            if sizeCorrection >= 0:
+                completeSample = frameWithOutUpdatedAux.sample(sizeCorrection)
+                sampleUpdatedAux = pd.concat([sampleUpdatedAux, completeSample], ignore_index=True)
+            else:
+                projects = sampleUpdatedAux.sample(sizeCorrection * -1)
+                sampleUpdatedAux = sampleUpdatedAux[~sampleUpdatedAux['id'].isin(projects['id'])]
 
             representative = self.testRepresentativeness(sampleUpdatedAux, frame, ksScore)
 
-        return sampleUpdatedAux
+        sampleExcluded = sample[~sample['id'].isin(sampleUpdatedAux['id'])]
+        sampleIncluded = sampleUpdatedAux[~sampleUpdatedAux['id'].isin(sample['id'])]
 
-    def updateSampleST(self, frame:pd.DataFrame, sample: pd.DataFrame, groups: pd.DataFrame, ksScore = 0.2, STQ = 'dynamic') -> pd.DataFrame:
+        return sampleUpdatedAux, sampleExcluded, sampleIncluded
 
-        sampleUpdated = frame[frame['id'].isin(sample['id'])].reset_index(drop=True)
-        sampleAux = pd.DataFrame
+    def updateSampleST(self, frame:pd.DataFrame, sample: pd.DataFrame, groups: pd.DataFrame, sampleExpectedSize = 0, ksScore = 0.05, STQ = 'dynamic') -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+
+        sampleUpdated: pd.DataFrame = frame[frame['id'].isin(sample['id'])].reset_index(drop=True)
+        sampleOutput = pd.DataFrame
+
+        sampleSize = sampleExpectedSize
+        if sampleSize == 0:
+            sampleSize = SB.sampleSize(frame.shape[0])
+        proportion = (sampleSize - groups.shape[0]) / (frame.shape[0] - groups.shape[0])
+
         representative = False
 
         while not (representative):
             frameAux = frame.copy()
             sampleAux = sampleUpdated.copy()
+            sampleOutput = pd.DataFrame()
 
             for id, group in groups.iterrows():
                 elementsInTheGroup = frameAux.copy()
@@ -119,50 +101,62 @@ class Maintenance:
                 if STQ == 'static':
                     frameQuantity = int(group['sampleQty'])
                 elif STQ == 'dynamic':
-                    frameQuantity = round(frameFiltered.shape[0] * 0.2)
+                    frameQuantity = round(frameFiltered.shape[0] * proportion)
                     if frameQuantity == 0:
                         frameQuantity = 1
 
+                sampleOutput = pd.concat([sampleOutput, sampleFiltered], ignore_index=True)
                 sampleQuantity = sampleFiltered.shape[0]
                 difference = frameQuantity - sampleQuantity
 
                 if difference > 0:
+                    frameFiltered = frameFiltered[~frameFiltered['id'].isin(sampleFiltered['id'])]
                     if frameFiltered.shape[0] < difference:
                         difference = frameFiltered.shape[0]
-                    frameFiltered = frameFiltered[~frameFiltered['id'].isin(sampleFiltered['id'])]
                     randElem = frameFiltered.sample(difference)
-                    sampleAux = pd.concat([sampleAux, randElem], ignore_index=True)
-                else:
+                    sampleOutput = pd.concat([sampleOutput, randElem], ignore_index=True)
+                elif difference < 0:
                     randElem = sampleFiltered.sample(difference * -1)
-                    sampleAux = sampleAux[~sampleAux['id'].isin(randElem['id'])]
+                    sampleOutput = sampleOutput[~sampleOutput['id'].isin(randElem['id'])]
+
 
                 frameAux = frameAux[~frameAux['id'].isin(elementsInTheGroup['id'])]
+                sampleAux = sampleAux[~sampleAux['id'].isin(elementsInTheGroup['id'])]
 
-            representative = self.testRepresentativeness(sampleAux, frame, ksScore)
+            representative = self.testRepresentativeness(sampleOutput, frame, ksScore)
 
-        return sampleAux
+        sampleExcluded = sample[~sample['id'].isin(sampleOutput['id'])]
+        sampleIncluded = sampleOutput[~sampleOutput['id'].isin(sample['id'])]
+
+        return sampleOutput, sampleExcluded, sampleIncluded
 
 
-    def updateSampleDTDQ(self, frame:pd.DataFrame, sample: pd.DataFrame, ksScore = 0.2) -> pd.DataFrame:
+    def updateSampleDTDQ(self, frame:pd.DataFrame, sample: pd.DataFrame, sampleExpectedSize = 0, ksScore = 0.05) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 
-        sampleUpdated = frame[frame['id'].isin(sample['id'])].reset_index(drop=True)
+        sampleUpdated: pd.DataFrame = frame[frame['id'].isin(sample['id'])].reset_index(drop=True)
+        sampleSize = sampleExpectedSize
+        if sampleSize == 0:
+            sampleSize = SB.sampleSize(frame.shape[0])
+
         sampleAux = pd.DataFrame
         representative = False
 
         diverseSample = SB.createDiverseSample(frame, self._dimensions)
         sampleArray = diverseSample.to_numpy()
-        populationArray = frame.to_numpy()
+        frameWithoutDiverse = frame[~frame['id'].isin(diverseSample['id'])]
+        populationArray = frameWithoutDiverse.to_numpy()
 
         DS = DiversityScore(frame, self._dimensions)
+
         groups, outliers = DS.clusterizePopulation(sampleArray, populationArray)
-        proportion = SB.sampleSize(frame.shape[0]) / frame.shape[0]
-        groups = SB.generateGroupsOutput(groups, proportion)
+        groups = SB.generateGroupsOutput(groups, sampleUpdated)
+        proportion = (sampleSize - len(groups)) / (frame.shape[0] - len(groups))
         groupsDF = pd.DataFrame(groups)
 
         while not (representative):
-
             sampleAux = sampleUpdated[~sampleUpdated['id'].isin(diverseSample['id'])].copy()
-            frameAux = frame[~frame['id'].isin(diverseSample['id'])].copy()
+            frameAux = frameWithoutDiverse.copy()
+            remainings = pd.DataFrame()
 
             for id, group in groupsDF.iterrows():
                 elementsInTheGroup = pd.DataFrame(group['similarProjects'], columns=frame.columns)
@@ -170,25 +164,48 @@ class Maintenance:
                 frameFiltered = frameAux[frameAux['id'].isin(elementsInTheGroup['id'])].copy()
                 frameFiltered = frameFiltered[~frameFiltered['id'].isin(sampleFiltered['id'])]
 
-                quantity = sampleFiltered.shape[0]
-                difference = int(group['sampleQty'] - quantity)
+                sampleQty = sampleFiltered.shape[0]
+                realQty = (group['groupQty'] - 1) * proportion
+                propQty = round(realQty)
+                difference = propQty - sampleQty
+                '''
+                if (realQty > propQty):
+                    if difference > 0:
+                        proj = frameFiltered.sample(1)
+                        frameFiltered = frameFiltered[frameFiltered['id'] != proj['id'].item()]
+                        remainings = pd.concat([remainings, proj], ignore_index=True)
+                    elif difference < 0:
+                        proj = sampleFiltered.sample(1)
+                        sampleFiltered = sampleFiltered[sampleFiltered['id'] != proj['id'].item()]
+                        remainings = pd.concat([remainings, proj], ignore_index=True)
+                        difference += 1
+                '''
 
-                projDiv = diverseSample.iloc[[id]]
                 if difference > 0:
-                    randElem = frameFiltered.sample(difference - 1)
+                    randElem = frameFiltered.sample(difference)
                     sampleAux = pd.concat([sampleAux, randElem], ignore_index=True)
-                else:
-                    randElem = sampleFiltered.sample((difference - 1) * -1)
-                    randElem = randElem[projDiv['id'].item() != randElem['id']]
+                elif sampleFiltered.shape[0] > 0:
+                    randElem = sampleFiltered.sample(difference * -1)
                     sampleAux = sampleAux[~sampleAux['id'].isin(randElem['id'])]
+            '''
+            sizeCorrection = sampleSize - (sampleAux.shape[0] + diverseSample.shape[0])
+            if (sizeCorrection > 0):
+                projects = remainings.sample(sizeCorrection, ignore_index=True)
+                sampleAux = pd.concat([sampleAux, projects], ignore_index=True)
+            elif (sizeCorrection < 0):
+                projects = sampleAux.sample(sizeCorrection * -1)
+                sampleAux = sampleAux[~sampleAux['id'].isin(projects['id'])]
+            '''
 
-                sampleAux = pd.concat([sampleAux, projDiv], ignore_index=True)
-
+            sampleAux = pd.concat([sampleAux, diverseSample], ignore_index=True)
             representative = self.testRepresentativeness(sampleAux, frame, ksScore)
 
-        return sampleAux
+        sampleExcluded = sample[~sample['id'].isin(sampleAux['id'])]
+        sampleIncluded = sampleAux[~sampleAux['id'].isin(sample['id'])]
 
-    def testRepresentativeness (self, sample, population, ksScore = 0.2) -> bool:
+        return sampleAux, sampleExcluded, sampleIncluded
+
+    def testRepresentativeness (self, sample, population, ksScore) -> bool:
 
         for variable in self._dimensions:
             cdfFrame = stMod.ECDF(population[variable].to_numpy())

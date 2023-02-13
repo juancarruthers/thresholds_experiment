@@ -1,7 +1,7 @@
-import statistics as st
-import math
 import numpy as np
 import pandas as pd
+import SimilarityFunc as SF
+from operator import itemgetter
 
 class DiversityScore:
 
@@ -16,44 +16,21 @@ class DiversityScore:
         self.dimensions = dimensions
         self.configuration = configuration
 
-    def _numericDimensionSimilaritySD(self, projectSample: int | float, projectsPopulation: np.array) -> tuple[list[bool], list[float, float]]:
-        stddev = st.stdev(projectsPopulation)
-        lower = projectSample - stddev
-        upper = projectSample + stddev
-        similarityScore = []
-        for project in projectsPopulation:
-            similarityScore.append(lower <= project <= upper)
-        return similarityScore, [lower, upper]
-
-    def _numericDimensionSimilarity(self: int | float, projectSample, projectsPopulation: np.array)-> tuple[list[bool], list[float, float]]:
-        lower = pow(10, math.log10(projectSample + 1) - 0.5) - 1
-        upper = pow(10, math.log10(projectSample + 1) + 0.5) - 1
-        similarityScore = []
-        for project in projectsPopulation:
-            similarityScore.append(lower <= project <= upper)
-        return similarityScore, [lower, upper]
-
-    def _factorDimensionSimilarity(self, projectSample: str, projectsPopulation: np.array)-> tuple[list[bool], list[str]]:
-        similarityScore = []
-        for project in projectsPopulation:
-            similarityScore.append(projectSample == project)
-        return similarityScore, [projectSample]
-
     def similarityScore(self, projectDimValue: int | float | str, populationDimValues: np.array, similarityFunction)-> tuple[list[bool], list]:
         valueType = type(projectDimValue)
-        similarityScore: list[bool]
-        thresholds: list
+        similarityScore: list[bool] = []
+        thresholds: list = []
 
         if not (similarityFunction is None):
             result = similarityFunction(projectDimValue,  populationDimValues)
             similarityScore = result[0]
             thresholds = result[1]
         elif valueType == int or valueType == float:
-            result = self._numericDimensionSimilarity(projectDimValue,  populationDimValues)
+            result = SF.numericDimensionSimilarity(projectDimValue,  populationDimValues)
             similarityScore = result[0]
             thresholds = result[1]
-        elif valueType == str:
-            result = self._factorDimensionSimilarity(projectDimValue,  populationDimValues)
+        elif valueType == str or valueType == bool:
+            result = SF.factorDimensionSimilarity(projectDimValue,  populationDimValues)
             similarityScore = result[0]
             thresholds = result[1]
 
@@ -109,44 +86,58 @@ class DiversityScore:
             projectIndexSet = projectIndexSet & similarityScore
         return dimIndexMatrix, projectIndexSet
 
-    def clusterizePopulation(self, diverseSample: np.array, population: np.ndarray) -> tuple[list, np.array]:
+    def clusterizePopulation(self, diverseSample: pd.DataFrame, population: pd.DataFrame) -> tuple[list, np.array]:
         dimensionsKeys = []
         for dimension in self.dimensions:
             dimKey = self.population.columns.get_loc(dimension)
             dimensionsKeys.append(dimKey)
 
-        groups = []
-        groupId = 1
+        similarityMatrix = diverseSample[['matrix']]
+        matrix = []
 
-        for project in diverseSample:
-            projectIndexSet = np.full((1, population[:, 0].size), True)[0]
+        for i, row in similarityMatrix.iterrows():
+            matrix.append(row[0])
+
+        matrix = np.array(matrix)
+        sampleIndexes = population[population['id'].isin(diverseSample['id'])].index.tolist()
+        matrix = np.delete(matrix, sampleIndexes, axis=1)
+
+        populationAux = population[~population['id'].isin(diverseSample['id'])].copy()
+
+        sampleArray = diverseSample.to_numpy()
+        populationArray = populationAux.to_numpy()
+        groups = []
+        groupId = 0
+
+        while groupId < len(sampleArray):
+            popIndexes = np.where(matrix[groupId, :])[0]
+            quantity = 1
+            similarProjects = []
+            if len(popIndexes) >= 1:
+                similarProjects = list(itemgetter(*popIndexes)(populationArray))
+            if len(popIndexes) == 1:
+                similarProjects = [itemgetter(*popIndexes)(populationArray)]
+
+            quantity += len(similarProjects)
+
+            populationArray = np.delete(populationArray, matrix[groupId, :], axis=0)
+            matrix = np.delete(matrix, matrix[groupId, :], axis=1)
+
             thresholds = []
-            i = 0
+            dimIndex = 0
+
             for dimKey in dimensionsKeys:
                 confDim = None
                 if len(self.configuration) != 0:
-                    confDim = self.configuration[i]
-                result = self.similarityScore(project[dimKey], population[:, dimKey], confDim)
-                similarityScore = result[0]
-                thresholds.append({self.dimensions[i]: result[1]})
+                    confDim = self.configuration[dimIndex]
 
-                i += 1
-                if population.size > 0:
-                    projectIndexSet = projectIndexSet & similarityScore
+                projectValue = sampleArray[groupId, dimKey]
+                popValues = pd.DataFrame(population.iloc[:, dimKey]).T.to_numpy()[0]
+                result = self.similarityScore(projectValue, popValues, confDim)
 
-            quantity = 1
-            j = 0
-            similarProjects = []
-            while j < population[:, 0].size:
-                similar = projectIndexSet[j]
-                if similar:
-                    project: np.ndarray = population[j, :]
-                    similarProjects.append(project)
-                    quantity += 1
-                    population = np.delete(population, j, 0)
-                    projectIndexSet = np.delete(projectIndexSet, j, 0)
-                else:
-                    j += 1
+                thresholds.append({self.dimensions[dimIndex]: result[1]})
+                dimIndex += 1
+
             groups.append({'groupId': groupId, 'groupQty': quantity, 'thresholds': thresholds, 'similarProjects': similarProjects})
 
             groupId += 1
@@ -154,7 +145,7 @@ class DiversityScore:
         return groups, population
 
     # If you set the sample argument, it will calculate scores of the projects in the sample
-    def scoreProjectsSorted(self, sample=pd.DataFrame()) -> pd.DataFrame:
+    def scoreProjects(self, sample=pd.DataFrame()) -> pd.DataFrame:
         score: pd.DataFrame
         if sample.shape[0] == 0:
             scores = self.population.copy()
@@ -167,5 +158,5 @@ class DiversityScore:
             scores.at[i, 'diversityScore'] = projectScore[0]
             scores.at[i, 'similarityMatrix'] = projectScore[2]
 
-        return scores.sort_values(by=['diversityScore'], ascending=False)
+        return scores
 
