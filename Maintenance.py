@@ -142,44 +142,31 @@ class Maintenance:
         representative = False
 
         diverseSample = SB.createDiverseSample(frame, self._dimensions)
-        sampleArray = diverseSample.to_numpy()
-        frameWithoutDiverse = frame[~frame['id'].isin(diverseSample['id'])]
-        populationArray = frameWithoutDiverse.to_numpy()
+        frameWithoutUpdatedSample = frame[~frame['id'].isin(sampleUpdated['id'])]
 
         DS = DiversityScore(frame, self._dimensions)
 
-        groups, outliers = DS.clusterizePopulation(sampleArray, populationArray)
+        groups, outliers = DS.clusterizePopulation(diverseSample, frame)
         groups = SB.generateGroupsOutput(groups, sampleUpdated)
         proportion = (sampleSize - len(groups)) / (frame.shape[0] - len(groups))
         groupsDF = pd.DataFrame(groups)
 
         while not (representative):
-            sampleAux = sampleUpdated[~sampleUpdated['id'].isin(diverseSample['id'])].copy()
-            frameAux = frameWithoutDiverse.copy()
+            sampleAux = sampleUpdated.copy()
+            frameAux = frameWithoutUpdatedSample.copy()
             remainings = pd.DataFrame()
 
             for id, group in groupsDF.iterrows():
-                elementsInTheGroup = pd.DataFrame(group['similarProjects'], columns=frame.columns)
+                elementsInTheGroup = pd.concat([pd.DataFrame(group['similarProjects'], columns=frame.columns), pd.DataFrame(diverseSample.iloc[id]).T], ignore_index=True)
                 sampleFiltered = sampleAux[sampleAux['id'].isin(elementsInTheGroup['id'])].copy()
                 frameFiltered = frameAux[frameAux['id'].isin(elementsInTheGroup['id'])].copy()
-                frameFiltered = frameFiltered[~frameFiltered['id'].isin(sampleFiltered['id'])]
 
                 sampleQty = sampleFiltered.shape[0]
-                realQty = (group['groupQty'] - 1) * proportion
+                realQty = (group['groupQty'] - 1) * proportion + 1
                 propQty = round(realQty)
+                if propQty == 1:
+                    realQty = 1
                 difference = propQty - sampleQty
-                '''
-                if (realQty > propQty):
-                    if difference > 0:
-                        proj = frameFiltered.sample(1)
-                        frameFiltered = frameFiltered[frameFiltered['id'] != proj['id'].item()]
-                        remainings = pd.concat([remainings, proj], ignore_index=True)
-                    elif difference < 0:
-                        proj = sampleFiltered.sample(1)
-                        sampleFiltered = sampleFiltered[sampleFiltered['id'] != proj['id'].item()]
-                        remainings = pd.concat([remainings, proj], ignore_index=True)
-                        difference += 1
-                '''
 
                 if difference > 0:
                     randElem = frameFiltered.sample(difference)
@@ -187,17 +174,29 @@ class Maintenance:
                 elif sampleFiltered.shape[0] > 0:
                     randElem = sampleFiltered.sample(difference * -1)
                     sampleAux = sampleAux[~sampleAux['id'].isin(randElem['id'])]
-            '''
-            sizeCorrection = sampleSize - (sampleAux.shape[0] + diverseSample.shape[0])
+
+                project = pd.DataFrame()
+
+                if (realQty < propQty):
+                    project = elementsInTheGroup[elementsInTheGroup['id'].isin(sampleAux['id'])].sample(1)
+                elif (realQty > propQty):
+                    project = elementsInTheGroup[~elementsInTheGroup['id'].isin(sampleAux['id'])].sample(1)
+
+                remainings = pd.concat([remainings, project], ignore_index=True)
+
+            sizeCorrection = sampleSize - sampleAux.shape[0]
+            frameAux = frameAux[~frameAux['id'].isin(sample['id'])].copy()
+
             if (sizeCorrection > 0):
+                remainings = remainings[remainings['id'].isin(frameAux['id'])]
                 projects = remainings.sample(sizeCorrection, ignore_index=True)
                 sampleAux = pd.concat([sampleAux, projects], ignore_index=True)
             elif (sizeCorrection < 0):
-                projects = sampleAux.sample(sizeCorrection * -1)
+                remainings = remainings[remainings['id'].isin(sampleAux['id'])]
+                projects = remainings.sample(sizeCorrection * -1)
                 sampleAux = sampleAux[~sampleAux['id'].isin(projects['id'])]
-            '''
 
-            sampleAux = pd.concat([sampleAux, diverseSample], ignore_index=True)
+
             representative = self.testRepresentativeness(sampleAux, frame, ksScore)
 
         sampleExcluded = sample[~sample['id'].isin(sampleAux['id'])]
