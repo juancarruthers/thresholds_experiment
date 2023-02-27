@@ -1,9 +1,12 @@
+import numpy as np
 import pandas as pd
 import SampleBuilder as SB
 from DiversityScore import DiversityScore
 import scipy.stats as sp
 import statsmodels.distributions.empirical_distribution as stMod
 from GithubGraphQL import GithubGraphQL
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
 
 
 class Maintenance:
@@ -15,54 +18,102 @@ class Maintenance:
 
     def updateSampleDR(self, frame:pd.DataFrame, sample: pd.DataFrame, sampleExpectedSize = 0, ksScore = 0.05) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         sampleUpdated: pd.DataFrame = frame[frame['id'].isin(sample['id'])].reset_index(drop=True)
-        sampleExcluded: pd.DataFrame = sample[~sample['id'].isin(sampleUpdated['id'])].reset_index(drop=True)
-        frameWithOutUpdated: pd.DataFrame = frame[~frame['id'].isin(sampleUpdated['id'])].reset_index(drop=True)
+        frameWithoutUpdatedSample: pd.DataFrame = frame[~frame['id'].isin(sampleUpdated['id'])].reset_index(drop=True)
 
         sampleSize = sampleExpectedSize
-        if sampleExpectedSize == 0:
+        if sampleSize == 0:
             sampleSize = SB.sampleSize(frame.shape[0])
 
-        DS = DiversityScore(frameWithOutUpdated, self._dimensions)
-
-        dimensionsKeysSam = []
-        dimensionsKeysPop = []
-        similar = []
-        for dimension in self._dimensions:
-            dimensionsKeysSam.append(sample.columns.get_loc(dimension))
-            dimensionsKeysPop.append(frameWithOutUpdated.columns.get_loc(dimension))
-
-        sampArray = sampleExcluded.to_numpy()
-        frameWithOutUpdatedArray = frameWithOutUpdated.to_numpy()
-
-        for project in sampArray:
-            projScore = DS.scoreProject(project, frameWithOutUpdated.shape[0], len(self._dimensions), dimensionsKeysSam, dimensionsKeysPop, frameWithOutUpdatedArray)[1]
-            projScoreDF = pd.DataFrame(projScore)
-            similarProj = frameWithOutUpdated[frameWithOutUpdated.index.isin(projScoreDF[projScoreDF[0]].index.values)].reset_index(drop=True)
-            similar.append(similarProj)
+        sampleDifference = sampleSize - sampleUpdated.shape[0]
+        diverseSample = SB.createDiverseSample(frame, self._dimensions)
 
         representative = False
         sampleUpdatedAux = pd.DataFrame()
+        DS = DiversityScore(frame, self._dimensions)
+
+        groups, outliers = DS.clusterizePopulation(diverseSample, frame)
+        diverseSample = diverseSample.drop('matrix', axis=1)
+        groups = SB.generateGroupsOutput(groups, sampleUpdated)
+        proportion = (sampleSize - len(groups)) / (frame.shape[0] - len(groups))
+        groupsDF = pd.DataFrame(groups)
+
         while not (representative):
-            sampleUpdatedAux = sampleUpdated.copy()
-            frameWithOutUpdatedAux = frameWithOutUpdated.copy()
-            for projects in similar:
-                projects = projects[~projects['id'].isin(sampleUpdatedAux['id'])]
-                if projects.shape[0] > 0:
-                    randProj = projects.sample(1, ignore_index=True)
-                else:
-                    randProj = frameWithOutUpdatedAux.sample(1, ignore_index=True)
-                sampleUpdatedAux = pd.concat([sampleUpdatedAux, randProj], ignore_index=True)
-                frameWithOutUpdatedAux = frameWithOutUpdatedAux[frameWithOutUpdatedAux['id'] != randProj['id'][0]]
+            sampleAux = sampleUpdated.copy()
+            frameAux = frameWithoutUpdatedSample.copy()
+            pool = pd.DataFrame()
 
-            sizeCorrection = sampleSize - sampleUpdatedAux.shape[0]
+            for id, group in groupsDF.iterrows():
+                elementsInTheGroup = pd.concat([pd.DataFrame(group['similarProjects'], columns=frame.columns),
+                                                pd.DataFrame(diverseSample.iloc[id]).T], ignore_index=True)
+                sampleFiltered = sampleAux[sampleAux['id'].isin(elementsInTheGroup['id'])].copy()
+                frameFiltered = frameAux[frameAux['id'].isin(elementsInTheGroup['id'])].copy()
 
-            if sizeCorrection >= 0:
-                completeSample = frameWithOutUpdatedAux.sample(sizeCorrection)
-                sampleUpdatedAux = pd.concat([sampleUpdatedAux, completeSample], ignore_index=True)
-            else:
-                projects = sampleUpdatedAux.sample(sizeCorrection * -1)
-                sampleUpdatedAux = sampleUpdatedAux[~sampleUpdatedAux['id'].isin(projects['id'])]
+                sampleQty = sampleFiltered.shape[0]
+                realQty = (group['groupQty'] - 1) * proportion + 1
+                propQty = round(realQty)
+                difference = propQty - sampleQty
 
+                if difference > 0:
+                    randElem = frameFiltered.sample(difference)
+                    pool = pd.concat([pool, randElem], ignore_index=True)
+
+            projects = pool.sample(sampleDifference)
+            sampleUpdatedAux = pd.concat([sampleAux, projects], ignore_index=True)
+            representative = self.testRepresentativeness(sampleUpdatedAux, frame, ksScore)
+
+        sampleExcluded = sample[~sample['id'].isin(sampleUpdatedAux['id'])]
+        sampleIncluded = sampleUpdatedAux[~sampleUpdatedAux['id'].isin(sample['id'])]
+
+        return sampleUpdatedAux, sampleExcluded, sampleIncluded
+
+    def updateSampleDRKMeans(self, frame:pd.DataFrame, sample: pd.DataFrame, sampleExpectedSize = 0, nClusters=6, ksScore = 0.05) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+
+        dimensionsKeys = []
+        for dimension in self._dimensions:
+            dimKey = frame.columns.get_loc(dimension)
+            dimensionsKeys.append(dimKey)
+
+        analizedDimensions = frame.iloc[:, dimensionsKeys]
+
+        sampleUpdated: pd.DataFrame = frame[frame['id'].isin(sample['id'])].reset_index(drop=True)
+        frameWithoutUpdatedSample: pd.DataFrame = frame[~frame['id'].isin(sampleUpdated['id'])].reset_index(drop=True)
+
+        sampleSize = sampleExpectedSize
+        if sampleSize == 0:
+            sampleSize = SB.sampleSize(frame.shape[0])
+
+        sampleDifference = sampleSize - sampleUpdated.shape[0]
+
+        representative = False
+        sampleUpdatedAux = pd.DataFrame()
+
+        scaler = StandardScaler()
+        data_scaled = scaler.fit_transform(analizedDimensions)
+        kmeans = KMeans(n_clusters=nClusters, init='k-means++')
+        kmeans.fit(data_scaled)
+        proportion = sampleSize / frame.shape[0]
+
+        while not (representative):
+            sampleAux = sampleUpdated.copy()
+            frameAux = frameWithoutUpdatedSample.copy()
+            pool = pd.DataFrame()
+
+            for i in range(nClusters):
+                clusters: np.ndarray = np.where(kmeans.labels_ == i)[0]
+                elementsInTheCluster: pd.DataFrame = frame.iloc[clusters, :]
+                sampleFiltered = sampleAux[sampleAux['id'].isin(elementsInTheCluster['id'])]
+                frameFiltered = frameAux[frameAux['id'].isin(elementsInTheCluster['id'])]
+                sampleQty = sampleFiltered.shape[0]
+                realQty = round(elementsInTheCluster.shape[0] * proportion)
+                if realQty == 0: realQty = 1
+                difference = realQty - sampleQty
+
+                if difference > 0:
+                    randElem = frameFiltered.sample(difference).copy()
+                    pool = pd.concat([pool, randElem], ignore_index=True)
+
+            projects = pool.sample(sampleDifference)
+            sampleUpdatedAux = pd.concat([sampleAux, projects], ignore_index=True)
             representative = self.testRepresentativeness(sampleUpdatedAux, frame, ksScore)
 
         sampleExcluded = sample[~sample['id'].isin(sampleUpdatedAux['id'])]
@@ -147,6 +198,7 @@ class Maintenance:
         DS = DiversityScore(frame, self._dimensions)
 
         groups, outliers = DS.clusterizePopulation(diverseSample, frame)
+        diverseSample = diverseSample.drop('matrix', axis=1)
         groups = SB.generateGroupsOutput(groups, sampleUpdated)
         proportion = (sampleSize - len(groups)) / (frame.shape[0] - len(groups))
         groupsDF = pd.DataFrame(groups)
