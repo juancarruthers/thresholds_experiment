@@ -4,9 +4,37 @@ import scipy.stats as sp
 import statsmodels.distributions.empirical_distribution as stMod
 import random as rd
 from DiversityScore import DiversityScore
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
 
 def createSimpleRandomSample(dataset: pd.DataFrame, numberElements: int) -> pd.DataFrame:
     sample = dataset.sample(numberElements)
+    return sample
+
+def createKMeansStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], numberElements: int, nClusters = 6) -> pd.DataFrame:
+    dimensionsKeys = []
+    for dimension in dimensions:
+        dimKey = dataset.columns.get_loc(dimension)
+        dimensionsKeys.append(dimKey)
+
+    analizedDimensions = dataset.iloc[:, dimensionsKeys]
+
+    scaler = StandardScaler()
+    data_scaled = scaler.fit_transform(analizedDimensions)
+    kmeans = KMeans(n_clusters=nClusters, init='k-means++')
+    kmeans.fit(data_scaled)
+    proportion = numberElements / dataset.shape[0]
+    sample = pd.DataFrame()
+    for i in range(nClusters):
+        clusters = np.where(kmeans.labels_ == i)[0]
+        projects = dataset.iloc[clusters, :]
+        quantity = round(len(clusters) * proportion)
+        if quantity < 1:
+            sample = pd.concat([sample, projects.sample(1)], ignore_index=True)
+        else:
+            sample = pd.concat([sample, projects.sample(quantity)], ignore_index=True)
+
+
     return sample
 
 def createStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], numberElements: int, configuration=[]) -> tuple[pd.DataFrame, list]:

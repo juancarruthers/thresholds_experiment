@@ -16,7 +16,7 @@ class DiversityScore:
         self.dimensions = dimensions
         self.configuration = configuration
 
-    def similarityScore(self, projectDimValue: int | float | str, populationDimValues: np.array, similarityFunction)-> tuple[list[bool], list]:
+    def similarityScore(self, projectDimValue: int | float | str, populationDimValues: np.ndarray, similarityFunction)-> tuple[list[bool], list]:
         valueType = type(projectDimValue)
         similarityScore: list[bool] = []
         thresholds: list = []
@@ -36,7 +36,7 @@ class DiversityScore:
 
         return similarityScore, thresholds
 
-    def scoreSample (self, sample: pd.DataFrame) -> tuple[float, list[float], np.array]:
+    def scoreSample (self, sample: pd.DataFrame) -> tuple[float, list[float], np.ndarray]:
 
         dimensionsKeysPop = []
         dimensionsKeysSam = []
@@ -70,7 +70,7 @@ class DiversityScore:
 
         return score, dimScore, indexSet
 
-    def scoreProject(self, project: np.array, projPopCount: int,  dimensionCount: int, dimensionsKeysSam, dimensionsKeysPop, populationArray):
+    def scoreProject(self, project: np.ndarray, projPopCount: int,  dimensionCount: int, dimensionsKeysSam, dimensionsKeysPop, populationArray):
 
         projectIndexSet = np.full((1, projPopCount), True)[0]
         dimIndexMatrix = np.full((dimensionCount, projPopCount), False)
@@ -86,7 +86,7 @@ class DiversityScore:
             projectIndexSet = projectIndexSet & similarityScore
         return dimIndexMatrix, projectIndexSet
 
-    def clusterizePopulation(self, diverseSample: pd.DataFrame, population: pd.DataFrame) -> tuple[list, np.array]:
+    def clusterizePopulation(self, diverseSample: pd.DataFrame, population: pd.DataFrame) -> tuple[list, pd.DataFrame]:
         dimensionsKeys = []
         for dimension in self.dimensions:
             dimKey = self.population.columns.get_loc(dimension)

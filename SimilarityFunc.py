@@ -2,7 +2,7 @@ import statistics as st
 import math
 import numpy as np
 
-def numericDimensionSimilaritySD(projectSample: int | float, projectsPopulation: np.array) -> tuple[
+def numericDimensionSimilaritySD(projectSample: int | float, projectsPopulation: np.ndarray) -> tuple[
     list[bool], list[float, float]]:
     stddev = st.stdev(projectsPopulation)
     lower = projectSample - stddev
@@ -13,7 +13,7 @@ def numericDimensionSimilaritySD(projectSample: int | float, projectsPopulation:
     return similarityScore, [lower, upper]
 
 
-def numericDimensionSimilarity(projectSample, projectsPopulation: np.array) -> tuple[
+def numericDimensionSimilarity(projectSample, projectsPopulation: np.ndarray) -> tuple[
     list[bool], list[float, float]]:
     lower = pow(10, math.log10(projectSample + 1) - 0.5) - 1
     upper = pow(10, math.log10(projectSample + 1) + 0.5) - 1
@@ -23,7 +23,7 @@ def numericDimensionSimilarity(projectSample, projectsPopulation: np.array) -> t
     return similarityScore, [lower, upper]
 
 
-def factorDimensionSimilarity(projectSample: str, projectsPopulation: np.array) -> tuple[list[bool], list[str]]:
+def factorDimensionSimilarity(projectSample: str, projectsPopulation: np.ndarray) -> tuple[list[bool], list[str]]:
     similarityScore = []
     for project in projectsPopulation:
         similarityScore.append(projectSample == project)
