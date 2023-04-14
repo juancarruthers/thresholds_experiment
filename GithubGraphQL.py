@@ -106,6 +106,7 @@ class GithubGraphQL:
             properties["owner"] = owner
 
             #NORMALIZE OUTPUT
+            filtersFlag = self.checkKeywords(repositoryName, filtersFlag)
             filtersFlag = self.updateLanguage(properties, filtersFlag)
             filtersFlag = self.updateCommits(properties, filtersFlag)
             filtersFlag = self.updateIssues(properties, owner, repositoryName, filtersFlag)
@@ -117,7 +118,6 @@ class GithubGraphQL:
             print(datetime.datetime.now(), "- Owner:", owner, "- Repository:", repositoryName)
 
             return properties, filtersFlag
-
 
     def updateLanguage(self, json: dict, filtersFlag: bool) -> bool:
         totalSize: int = json['languages']['totalSize']
@@ -288,6 +288,13 @@ class GithubGraphQL:
         dateLastPullReq = json['closedPullReqLastDate'] < self._filters['dateLastPullReq'] and json['closedPullReqLastDate'] < self._filters['dateLastPullReq']
 
         return dateLastCommitCond and dateLastPullReq
+
+    def checkKeywords(self, repoName: str, filtersFlag: bool) -> bool:
+
+        if filtersFlag or any(keyword in repoName for keyword in self._filters['keywords']):
+            return True
+
+        return False
 
 
     def makeRequest (self, query: str | dict, reqType="POST", url='https://api.github.com/graphql') -> dict:

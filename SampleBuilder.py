@@ -4,8 +4,7 @@ import scipy.stats as sp
 import statsmodels.distributions.empirical_distribution as stMod
 import random as rd
 from DiversityScore import DiversityScore
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
+import sklearn as sk
 
 def createSimpleRandomSample(dataset: pd.DataFrame, numberElements: int) -> pd.DataFrame:
     sample = dataset.sample(numberElements)
@@ -19,9 +18,9 @@ def createKMeansStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], n
 
     analizedDimensions = dataset.iloc[:, dimensionsKeys]
 
-    scaler = StandardScaler()
+    scaler = sk.preprocessing.StandardScaler()
     data_scaled = scaler.fit_transform(analizedDimensions)
-    kmeans = KMeans(n_clusters=nClusters, init='k-means++')
+    kmeans = sk.cluster.KMeans(n_clusters=nClusters, init='k-means++')
     kmeans.fit(data_scaled)
     proportion = numberElements / dataset.shape[0]
     sample = pd.DataFrame()

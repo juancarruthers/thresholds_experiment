@@ -5,8 +5,7 @@ from DiversityScore import DiversityScore
 import scipy.stats as sp
 import statsmodels.distributions.empirical_distribution as stMod
 from GithubGraphQL import GithubGraphQL
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
+import sklearn as sk
 
 
 class Maintenance:
@@ -87,9 +86,9 @@ class Maintenance:
         representative = False
         sampleUpdatedAux = pd.DataFrame()
 
-        scaler = StandardScaler()
+        scaler = sk.preprocessing.StandardScaler()
         data_scaled = scaler.fit_transform(analizedDimensions)
-        kmeans = KMeans(n_clusters=nClusters, init='k-means++')
+        kmeans = sk.cluster.KMeans(n_clusters=nClusters, init='k-means++')
         kmeans.fit(data_scaled)
         proportion = sampleSize / frame.shape[0]
 
