@@ -6,3 +6,4 @@ graphs
 *.xlsx
 backup
 SM
+__pycache__
