@@ -4,7 +4,9 @@ import scipy.stats as sp
 import statsmodels.distributions.empirical_distribution as stMod
 import random as rd
 from DiversityScore import DiversityScore
-import sklearn as sk
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+from aix360.algorithms.protodash.PDASH import ProtodashExplainer
 
 def createSimpleRandomSample(dataset: pd.DataFrame, numberElements: int) -> pd.DataFrame:
     sample = dataset.sample(numberElements)
@@ -18,9 +20,9 @@ def createKMeansStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], n
 
     analizedDimensions = dataset.iloc[:, dimensionsKeys]
 
-    scaler = sk.preprocessing.StandardScaler()
+    scaler = StandardScaler()
     data_scaled = scaler.fit_transform(analizedDimensions)
-    kmeans = sk.cluster.KMeans(n_clusters=nClusters, init='k-means++')
+    kmeans = KMeans(n_clusters=nClusters, init='k-means++', n_init=10)
     kmeans.fit(data_scaled)
     proportion = numberElements / dataset.shape[0]
     sample = pd.DataFrame()
@@ -33,8 +35,30 @@ def createKMeansStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], n
         else:
             sample = pd.concat([sample, projects.sample(quantity)], ignore_index=True)
 
+    sampleDifference = sample.shape[0] - numberElements
+    if sampleDifference > 0:
+        sample = sample[~sample['id'].isin(sample.sample(sampleDifference)['id'])]
+    elif sampleDifference < 0:
+        sample = pd.concat([sample, dataset[~dataset['id'].isin(sample['id'])].sample(sampleDifference * -1)])
 
     return sample
+
+def createProtodashSample(dataset: pd.DataFrame, dimensions: list[str], numberElements: int) -> pd.DataFrame:
+    dimensionsKeys = []
+    for dimension in dimensions:
+        dimKey = dataset.columns.get_loc(dimension)
+        dimensionsKeys.append(dimKey)
+
+    analizedDimensions = dataset.iloc[:, dimensionsKeys].copy()
+
+    numpyDataset = analizedDimensions.to_numpy()
+
+
+
+    explainer = ProtodashExplainer()
+    (W, S, _) = explainer.explain(numpyDataset, numpyDataset, m=numberElements, kernelType='Gaussian')
+    return dataset.iloc[S, :].copy()
+
 
 def createStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], numberElements: int, configuration=[]) -> tuple[pd.DataFrame, list]:
     clusterizer = DiversityScore(dataset, dimensions, configuration)
@@ -47,7 +71,10 @@ def createStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], numberE
         cont += 1
 
     groups, outliers = clusterizer.clusterizePopulation(diverseSample, dataset)
-    diverseSampleList = diverseSample.drop(columns=['matrix']).values.tolist()
+    diverseSampleList = list(diverseSample.drop(columns=['matrix']).values)
+    if len(diverseSampleList) > numberElements:
+        print(f'Sample must have {len(diverseSampleList)} or more elements')
+        exit()
     sample = []
 
     proportion = (numberElements - len(groups)) / dataset.shape[0]
@@ -125,25 +152,30 @@ def createDiverseSample(dataset: pd.DataFrame, dimensions: list[str], configurat
 
     return df
 
-def testSampleDiversityRepresentativeness(sample: pd.DataFrame, population: pd.DataFrame, variables: list[str], sigLevel=0.05) -> tuple[float, tuple[list, list]]:
+def testSampleDiversityRepresentativeness(sample: pd.DataFrame, population: pd.DataFrame, variables: list[str], sigLevel=0.05) -> tuple[float, tuple[list, list], tuple[list, list]]:
     diversityScore = DiversityScore(population, variables)
     dScore = diversityScore.scoreSample(sample)[0]
-    rScore = testSampleKS(sample, population, variables, sigLevel)
+    mwRej = testSampleRepresentativeness(sample, population, variables, sigLevel, 'mw')
+    ksRej = testSampleRepresentativeness(sample, population, variables, sigLevel, 'ks')
 
-    return dScore, rScore
+    return dScore, mwRej, ksRej
 
-def testSampleKS(sample: pd.DataFrame, population: pd.DataFrame, variables: list[str], sigLevel: float) -> tuple[list, list]:
+def testSampleRepresentativeness(sample: pd.DataFrame, population: pd.DataFrame, variables: list[str], sigLevel: float, test: str) -> tuple[list, list]:
     variablesValues = []
     varHypRejected = []
     for variable in variables:
-        cdfFrame = stMod.ECDF(population[variable].to_numpy())
-        ks = sp.ks_1samp(sample[variable], cdfFrame)
-        variablesValues.append({'dimension': variable, 'test': 'one-sample-K-S', 'test-score': ks[0], 'p-value': ks[1]})
-        if ks[1] < sigLevel:
-            varHypRejected.append({'dimension': variable, 'test': 'one-sample-K-S', 'test-score': ks[0], 'p-value': ks[1]})
+        testResult: any
+        if test == 'ks':
+            cdfFrame = stMod.ECDF(population[variable].to_numpy())
+            testResult = sp.ks_1samp(sample[variable], cdfFrame)
+        else:
+            testResult = sp.mannwhitneyu(population[variable], sample[variable])
+
+        variablesValues.append({'dimension': variable, 'test': 'one-sample-K-S', 'test-score': testResult[0], 'p-value': testResult[1]})
+        if testResult[1] < sigLevel:
+            varHypRejected.append({'dimension': variable, 'test': 'one-sample-K-S', 'test-score': testResult[0], 'p-value': testResult[1]})
 
     return variablesValues, varHypRejected
-
 
 def generateGroupsOutput(stratifiedSampleGroups: list, sample: pd.DataFrame) -> pd.DataFrame:
     groups = stratifiedSampleGroups.copy()
@@ -166,14 +198,3 @@ def generateGroupsOutput(stratifiedSampleGroups: list, sample: pd.DataFrame) -> 
     groupsDataframe = pd.DataFrame(groups)
     groupsDataframe.pop('thresholds')
     return groupsDataframe
-
-
-def getProjectGroup (project: dict, groups: pd.DataFrame, dimensions: list[str]) -> pd.DataFrame:
-    for dimension in dimensions:
-        dimValue = project[dimension]
-        groups = groups[dimValue >= groups[dimension + 'Min']]
-        groups = groups[dimValue <= groups[dimension + 'Max']]
-
-    return groups['groupId']
-
-
