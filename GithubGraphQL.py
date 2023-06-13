@@ -68,7 +68,7 @@ class GithubGraphQL:
                             repositoryProperties, filtersFlag = future.result()
                             if not filtersFlag:
                                 self._df_data.append(repositoryProperties)
-                                print(f'{datetime.datetime.now()} - Added: {repositoryProperties["owner"]}/{repositoryProperties["name"]}')
+                                print(f'{datetime.datetime.now()} - Added: {repositoryProperties["url"]}')
 
                         hasNextPage = repositories['pageInfo']['hasNextPage']
                         if hasNextPage:

@@ -1,8 +1,10 @@
+import concurrent.futures
 import os.path
 import pandas as pd
 import random
 import requests
 import time
+from git import Git
 
 class Utilities:
 
@@ -61,7 +63,6 @@ class Utilities:
 
         return response
 
-
     def _requestCondition (self, query: str | dict, reqType: str, url: str, headers: dict) -> tuple[dict, bool]:
         condition: bool
         try:
@@ -82,3 +83,20 @@ class Utilities:
             self.quit = True
             print(err)
             exit()
+
+    def downloadDataset(self, datasetUrls: pd.DataFrame, path: str):
+        repoQuantity = datasetUrls.shape[0]
+        step = 30
+        for i in range(0, repoQuantity, step):
+            urls = datasetUrls[datasetUrls.index.isin(range(i, i + step))].values
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+            futures = {executor.submit(self._cloneRepositories, url, path) for url in urls}
+            for future in concurrent.futures.as_completed(futures):
+                repo = future.result()
+                print(f'Downloaded Repository {repo}')
+
+    def _cloneRepositories(self, url: str, clonePath: str):
+        repository = Git(clonePath)
+        repository.clone(url)
+        return url
+
