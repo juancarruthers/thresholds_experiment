@@ -135,23 +135,24 @@ if __name__ == '__main__':
     oneMonthAgo = today - relativedelta(months=1)
 
     queryFilter = "is:public, language:java, archived:false, mirror:false, forks:>=10, stars:>=10, created:<=" + str(oneYearAgo)
-    secondFilter = {'totalSize': 10000, 'closedIssuesCount': 50, 'pullReqCount': 50, 'commits': 1000,
-                    'contributors': 0,  'coreContributors': 0, 'history': 0, 'issueFrequency': 0,
-                    'dateLastPullReq': '2010-01-01', 'dateLastCommit': '2010-01-01', 'keywords': ['sample', 'tutorial', 'demo', 'conf', 'exam']}
+    secondFilter = {'keywords': ['sample', 'tutorial', 'demo', 'conf', 'exam'], 'totalSize': 10000, 'commits': 1000,
+                    'closedIssuesCount': 50, 'pullReqCount': 50, 'dateLastActivity': '2010-01-01', 'contributors': 0,
+                    'munaiahMetrics':{'coreContributors': 0, 'history': 0, 'issueFrequency': 0}
+                    }
 
-    #createFrame(queryFilter, secondFilter)
+    createFrame(queryFilter, secondFilter)
 
     frame1 = pd.read_csv("./datasets/longStudy/20221004/frame.csv")
     dimensions = ['forkCount', 'stargazerCount', 'totalSize', 'commits', "closedIssuesCount", 'contributors',
                   "mergedPullReqCount", "closedPullReqCount"]
     path = "./datasets/samMainStudy/samples/"
     sampling = ['stratified', 'stratifiedKMeans', 'simpleRandom']
-    experiment(frame1, 'sampling', sampling, dimensions, path)
+    #experiment(frame1, 'sampling', sampling, dimensions, path)
 
     frame2 = pd.read_csv("./datasets/longStudy/20230301/frame.csv")
     path2 = "./datasets/samMainStudy/maintenance/"
     maintenance = ['DirectReplacementKM', 'DynamicThresholdsKM', 'UpdateIfAvailable', 'Resample', 'No']
-    experiment(frame2, 'maintenance', maintenance, dimensions, path2)
+    #experiment(frame2, 'maintenance', maintenance, dimensions, path2)
 
 
     for dimension in dimensions:
