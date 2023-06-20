@@ -105,7 +105,7 @@ class GithubGraphQL:
 
             #NORMALIZE OUTPUT
             for filter in self._filters:
-                filtersFlag = filter.updateFrame(properties, owner, repositoryName, filtersFlag)
+                filtersFlag = filter.updateFrame(properties, owner, repositoryName)
                 if filtersFlag:
                     break
 

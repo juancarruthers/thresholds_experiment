@@ -1,11 +1,11 @@
 from Filters.GraphqlFilter import GraphqlFilter
 class SizeFilter(GraphqlFilter):
 
-    def updateFrame(self, json: dict, owner: str, repositoryName: str, filtersFlag: bool) -> bool:
+    def updateFrame(self, json: dict, owner: str, repositoryName: str) -> bool:
 
         totalSize: int = json['languages']['totalSize']
 
-        if filtersFlag or totalSize < self.filter['totalSize']:
+        if totalSize < self.filter['totalSize']:
             return True
 
         if totalSize > 0:

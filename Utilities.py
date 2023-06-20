@@ -10,7 +10,7 @@ class Utilities:
 
     def __init__(self):
         self._reqSleepTime = [50, 100, 150, 200, 250, 300]
-        self._tokens = self.readFile("token").split(",\n")
+        #self._tokens = self.readFile("token").split(",\n")
 
     def readFile(self, filePath: str) -> str:
         file = open(filePath).readlines()
@@ -43,7 +43,8 @@ class Utilities:
         queryState.to_csv(path + "/queryState.csv", index=False)
 
     def makeRequest (self, query: str | dict, reqType="POST", url='https://api.github.com/graphql') -> dict:
-        headers = {'Authorization': 'Bearer ' + random.choice(self._tokens)}
+        tokens = self.readFile("token").split(",\n")
+        headers = {'Authorization': 'Bearer ' + random.choice(tokens)}
         response: dict
         response, condition = self._requestCondition(query, reqType, url, headers)
         iterations = 0
@@ -58,7 +59,7 @@ class Utilities:
                 query2['variables']['first'] = first
 
             time.sleep(random.choice(self._reqSleepTime))
-            headers = {'Authorization': 'Bearer ' + random.choice(self._tokens)}
+            headers = {'Authorization': 'Bearer ' + random.choice(tokens)}
             response, condition = self._requestCondition(query2, reqType, url, headers)
 
         return response

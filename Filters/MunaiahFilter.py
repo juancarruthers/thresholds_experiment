@@ -12,9 +12,7 @@ class MunaiahFilter(GraphqlFilter):
         super().__init__(p_filter)
         self._elementPerPageContribQuery = str(p_itemsPageContrQuery)
 
-    def updateFrame(self, json: dict, owner: str, repositoryName: str, filtersFlag: bool) -> bool:
-        if filtersFlag:
-            return True
+    def updateFrame(self, json: dict, owner: str, repositoryName: str) -> bool:
 
         dateOfCreation = json['createdAt']
         dateLastCommit = json['dateLastCommit']

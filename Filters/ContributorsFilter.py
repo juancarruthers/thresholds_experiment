@@ -1,19 +1,19 @@
 from Filters.GraphqlFilter import GraphqlFilter
 from Utilities import Utilities
+import pandas as pd
+from datetime import datetime
+from multipledispatch import dispatch
 
 
 class ContributorsFilter(GraphqlFilter):
 
+
     def __init__(self, p_filter: dict, p_itemsPageContrQuery=100):
         super().__init__(p_filter)
-        util = Utilities()
         self._elementPerPageContribQuery = str(p_itemsPageContrQuery)
-        self._tokens = util.readFile("token").split(",\n")
 
-
-    def updateFrame(self, json: dict, owner: str, repositoryName: str, filtersFlag: bool) -> bool:
-        if filtersFlag:
-            return True
+    @dispatch(dict, str, str)
+    def updateFrame(self, json: dict, owner: str, repositoryName: str) -> bool:
         util = Utilities()
 
         url = "https://api.github.com/repos/" + owner + "/" + repositoryName + "/contributors?per_page="+ self._elementPerPageContribQuery +"&page="
@@ -35,4 +35,17 @@ class ContributorsFilter(GraphqlFilter):
             return True
         else:
             json.update({"contributors": acum, "contributions": contribAcum})
+            return False
+
+    @dispatch(dict, str, datetime)
+    def updateFrame(self, repository: dict, path: str, date: datetime) -> bool:
+        commData = pd.read_csv(f'{path}_commits_and_comments.csv')
+        commData['committed_at'] = pd.to_datetime(commData['committed_at'])
+        rowsBeforeDate = commData[commData['committed_at'] <= date]
+        totalContrib = rowsBeforeDate['committer_id'].nunique()
+        
+        if (totalContrib < self.filter['contributors']):
+            return True
+        else:
+            repository['contributors'] = totalContrib
             return False

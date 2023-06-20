@@ -1,24 +1,23 @@
 from Filters.GraphqlFilter import GraphqlFilter
 from Utilities import Utilities
-
+from datetime import datetime
+import pandas as pd
+from multipledispatch import dispatch
 
 class PullReqFilter(GraphqlFilter):
 
     def __init__(self, p_filter: dict):
         super().__init__(p_filter)
-        util = Utilities()
-        self._closePullReqQuery = util.readFile("APIQueries/PullReq/closedPullReq")
-        self._mergedPullReqQuery = util.readFile("APIQueries/PullReq/mergedPullReq")
-        self._openPullReqQuery = util.readFile("APIQueries/PullReq/openPullReq")
-        self._tokens = util.readFile("token").split(",\n")
 
-    def updateFrame(self, json: dict, owner: str, repositoryName: str, filtersFlag: bool) -> bool:
-        if filtersFlag:
-            return True
+    @dispatch(dict, str, str)
+    def updateFrame(self, json: dict, owner: str, repositoryName: str) -> bool:
         util = Utilities()
+        closePullReqQuery = util.readFile("APIQueries/PullReq/closedPullReq")
+        mergedPullReqQuery = util.readFile("APIQueries/PullReq/mergedPullReq")
+        openPullReqQuery = util.readFile("APIQueries/PullReq/openPullReq")
 
         if (json['pullRequests']['totalCount'] > 0):
-            states = {'closed': self._closePullReqQuery, 'merged': self._mergedPullReqQuery, 'open': self._openPullReqQuery}
+            states = {'closed': closePullReqQuery, 'merged': mergedPullReqQuery, 'open': openPullReqQuery}
             newJson = {}
             for state, query in states.items():
                 variables = {'owner': owner, 'repoName': repositoryName}
@@ -40,4 +39,26 @@ class PullReqFilter(GraphqlFilter):
 
             json.pop('pullRequests', None)
             json.update(newJson)
+            return False
+
+    @dispatch(dict, str, datetime)
+    def updateFrame(self, repository: dict, path: str, date: datetime) -> bool:
+        prData = pd.read_csv(f'{path}_pr.csv')
+        prData['closed_at'] = pd.to_datetime(prData['closed_at'])
+        rows = prData[(prData['state']=='closed') & (prData['closed_at'] <= date)]
+        closedRows = rows[~rows['merged']]
+        mergedRows = rows[rows['merged']]
+        closedLastDate = closedRows['closed_at'].max()
+        mergedLastDate = mergedRows['closed_at'].max()
+        merged = mergedRows.shape[0]
+        closed = closedRows.shape[0]
+
+        pullReqCount = closed + merged
+        if (pullReqCount < self.filter['pullReqCount']):
+            return True
+        else:
+            repository['closedPullReqCount'] = closed
+            repository['mergedPullReqCount'] = merged
+            repository['closedPullReqLastDate'] = closedLastDate
+            repository['mergedPullReqLastDate'] = mergedLastDate
             return False
