@@ -44,7 +44,7 @@ class Utilities:
         queryState.to_csv(path + "/queryState.csv", index=False)
 
     def makeRequest (self, query: str | dict, reqType="POST", url='https://api.github.com/graphql') -> dict:
-        tokens = self.readFile("token").split(",\n")
+        tokens = self.readFile("token").split("\n")
         headers = {'Authorization': 'Bearer ' + random.choice(tokens)}
         response: dict
         response, condition = self._requestCondition(query, reqType, url, headers)

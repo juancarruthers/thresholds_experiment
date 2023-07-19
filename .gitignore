@@ -7,3 +7,5 @@ graphs
 backup
 SM
 __pycache__
+datasets
+Health_Indicator_Prediction

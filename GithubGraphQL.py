@@ -112,25 +112,29 @@ class GithubGraphQL:
             return properties, filtersFlag
 
     def _setFilters(self, thresholds: dict) -> list[GraphqlFilter]:
-        filters = []
-        for (key, value) in thresholds.items():
-            filter = GraphqlFilter
-            if key == 'keywords':
-                filter = KeywordsFilter({key: value})
-            if key == 'totalSize':
-                filter = SizeFilter({key: value})
-            if key == 'commits':
-                filter = CommitFilter({key: value})
-            if key == 'closedIssuesCount':
-                filter = IssuesFilter({key: value})
-            if key == 'pullReqCount':
-                filter = PullReqFilter({key: value})
-            if key == 'dateLastActivity':
-                filter = RecentActivityFilter({key: value})
-            if key == 'contributors':
-                filter = ContributorsFilter({key: value})
-            if key == 'munaiahMetrics':
-                filter = MunaiahFilter(value)
+        filters = ['keywords', 'totalSize', 'commits', 'closedIssuesCount', 'pullReqCount', 'dateLastActivity', 'contributors']
+        filtersConfig = []
+        for filter in filters:
+            filterConfig = GraphqlFilter
+            if filter in thresholds:
+                if filter == 'keywords':
+                    filterConfig = KeywordsFilter({filter: thresholds[filter]})
+                if filter == 'totalSize':
+                    filterConfig = SizeFilter({filter: thresholds[filter]})
+                if filter == 'commits':
+                    filterConfig = CommitFilter({filter: thresholds[filter]})
+                if filter == 'closedIssuesCount':
+                    filterConfig = IssuesFilter({filter: thresholds[filter]})
+                if filter == 'pullReqCount':
+                    filterConfig = PullReqFilter({filter: thresholds[filter]})
+                if filter == 'dateLastActivity':
+                    filterConfig = RecentActivityFilter({filter: thresholds[filter]})
+                if filter == 'contributors':
+                    filterConfig = ContributorsFilter({filter: thresholds[filter]})
 
-            filters.append(filter)
-        return filters
+                filtersConfig.append(filterConfig)
+            else:
+                print(f"{filter} filter not set")
+                exit()
+
+        return filtersConfig

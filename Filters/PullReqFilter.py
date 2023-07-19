@@ -2,14 +2,13 @@ from Filters.GraphqlFilter import GraphqlFilter
 from Utilities import Utilities
 from datetime import datetime
 import pandas as pd
-from multipledispatch import dispatch
+from dateutil.relativedelta import relativedelta
 
 class PullReqFilter(GraphqlFilter):
 
     def __init__(self, p_filter: dict):
         super().__init__(p_filter)
 
-    @dispatch(dict, str, str)
     def updateFrame(self, json: dict, owner: str, repositoryName: str) -> bool:
         util = Utilities()
         closePullReqQuery = util.readFile("APIQueries/PullReq/closedPullReq")
@@ -41,17 +40,24 @@ class PullReqFilter(GraphqlFilter):
             json.update(newJson)
             return False
 
-    @dispatch(dict, str, datetime)
-    def updateFrame(self, repository: dict, path: str, date: datetime) -> bool:
+    def xiaUpdateFrame(self, repository: dict, path: str, date: datetime) -> bool:
         prData = pd.read_csv(f'{path}_pr.csv')
-        prData['closed_at'] = pd.to_datetime(prData['closed_at'])
-        rows = prData[(prData['state']=='closed') & (prData['closed_at'] <= date)]
+        date1 = pd.to_datetime(prData['closed_at'], errors='coerce', format='%Y-%m-%d %H:%M:%S.%f')
+        date2 = pd.to_datetime(prData['closed_at'], errors='coerce', format='%Y-%m-%d %H:%M:%S')
+        prData['closed_at'] = date1.fillna(date2)
+        rows = prData[(prData['state']=='closed') & (prData['closed_at'] < date)]
         closedRows = rows[~rows['merged']]
         mergedRows = rows[rows['merged']]
         closedLastDate = closedRows['closed_at'].max()
         mergedLastDate = mergedRows['closed_at'].max()
         merged = mergedRows.shape[0]
         closed = closedRows.shape[0]
+
+        aMonthAgo = date - relativedelta(months=1)
+        monthlyClosed = closedRows[closedRows['closed_at'] >= aMonthAgo]
+        monthlyMerged = mergedRows[mergedRows['closed_at'] >= aMonthAgo]
+
+
 
         pullReqCount = closed + merged
         if (pullReqCount < self.filter['pullReqCount']):
@@ -61,4 +67,6 @@ class PullReqFilter(GraphqlFilter):
             repository['mergedPullReqCount'] = merged
             repository['closedPullReqLastDate'] = closedLastDate
             repository['mergedPullReqLastDate'] = mergedLastDate
+            repository['monthlyclosedPullReq'] = monthlyClosed.shape[0]
+            repository['monthlymergedPullReq'] = monthlyMerged.shape[0]
             return False

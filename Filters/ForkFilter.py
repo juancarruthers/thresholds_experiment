@@ -4,10 +4,11 @@ import datetime
 
 class ForkFilter(GraphqlFilter):
 
-    def updateFrame(self, repository: dict, path: str, date: datetime) -> bool:
+    def xiaUpdateFrame(self, repository: dict, path: str, date: datetime) -> bool:
+        fmt = '%Y-%m-%d %H:%M:%S'
         forkData = pd.read_csv(f'{path}_forks.csv')
-        forkData['created_at'] = pd.to_datetime(forkData['created_at'])
-        rows = forkData[forkData['created_at'] <= date]
+        forkData['created_at'] = pd.to_datetime(forkData['created_at'], format=fmt)
+        rows = forkData[forkData['created_at'] < date]
         total = rows.shape[0]
 
         if total < self.filter['forkCount']:

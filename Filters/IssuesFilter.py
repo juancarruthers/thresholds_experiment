@@ -2,14 +2,12 @@ from Filters.GraphqlFilter import GraphqlFilter
 from Utilities import Utilities
 import pandas as pd
 from datetime import datetime
-from multipledispatch import dispatch
 
 class IssuesFilter(GraphqlFilter):
 
     def __init__(self, p_filter: dict):
         super().__init__(p_filter)
 
-    @dispatch(dict, str, str)
     def updateFrame(self, json: dict, owner: str, repositoryName: str) -> bool:
 
         util = Utilities()
@@ -39,11 +37,12 @@ class IssuesFilter(GraphqlFilter):
             json.update(newJson)
             return False
 
-    @dispatch(dict, str, datetime)
-    def updateFrame(self, repository: dict, path: str, date: datetime) -> bool:
+    def xiaUpdateFrame(self, repository: dict, path: str, date: datetime) -> bool:
         issueData = pd.read_csv(f'{path}_issues.csv')
-        issueData['closed_at'] = pd.to_datetime(issueData['closed_at'], format='mixed')
-        rows = issueData[(issueData['state'] == "closed") & (issueData['closed_at'] <= date)]
+        date1 = pd.to_datetime(issueData['closed_at'], errors='coerce', format='%Y-%m-%d %H:%M:%S.%f')
+        date2 = pd.to_datetime(issueData['closed_at'], errors='coerce', format='%Y-%m-%d %H:%M:%S')
+        issueData['closed_at'] = date1.fillna(date2)
+        rows = issueData[(issueData['state'] == "closed") & (issueData['closed_at'] < date)]
         total = (rows.shape[0] - repository['closedPullReqCount'] - repository['mergedPullReqCount'])[0]
         
         if (total < self.filter['closedIssuesCount']):
