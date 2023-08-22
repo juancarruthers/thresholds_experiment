@@ -3,10 +3,10 @@ import datetime
 import numpy as np
 import pandas as pd
 from dateutil.relativedelta import relativedelta
-import SampleBuilder as SB
+#import SampleBuilder as SB
 from GithubGraphQL import GithubGraphQL as GQL
 import scipy.stats as sp
-from Maintenance import Maintenance
+#from Maintenance import Maintenance
 
 
 
@@ -128,35 +128,21 @@ if __name__ == '__main__':
                     'closedIssuesCount': 50, 'pullReqCount': 50, 'dateLastActivity': '2010-01-01', 'contributors': 0,
                     'munaiahMetrics':{'coreContributors': 0, 'history': 0, 'issueFrequency': 0}
                     }
+    frame = pd.read_csv("./datasets/longStudy/queryresults/20221004/frame.csv")
 
     #createFrame(queryFilter, secondFilter)
 
-    frame1 = pd.read_csv("./datasets/longStudy/queryresults/20221004/frame.csv")
-    dimensions = ['forkCount', 'stargazerCount', 'totalSize', 'commits', "closedIssuesCount", 'contributors',
-                  "mergedPullReqCount", "closedPullReqCount"]
-    path = "./datasets/samMainStudy/samples/"
-    sampling = ['protodash','stratified', 'stratifiedKMeans', 'simpleRandom']
-    experiment(frame1, 'sampling', sampling, dimensions, path)
+    today = datetime.date.today()
 
-    frame2 = pd.read_csv("./datasets/longStudy/queryresults/20230301/frame.csv")
-    path2 = "./datasets/samMainStudy/maintenance/"
-    maintenance = ['DirectReplacementKM', 'DynamicThresholdsKM', 'UpdateIfAvailable', 'Resample', 'No']
-    experiment(frame2, 'maintenance', maintenance, dimensions, path2)
+    folderPath = "./datasets/" + str(today.year) + str(today.month) + str(today.day)
+    if not (os.path.isdir(folderPath)):
+        os.mkdir(folderPath)
+
+    projectRetriever = GQL(queryFilter, secondFilter, folderPath, p_saveThreshold=5000,
+                           p_itemsPageMainQuery=30)
+    projectRetriever.updateFrame(frame)
 
 
-    for dimension in dimensions:
-        sampleStratified = pd.read_csv("./datasets/samMainStudy/samples/stratified.csv")
-        sampleStratifiedKM = pd.read_csv("./datasets/samMainStudy/samples/stratifiedKMeans.csv")
-        sampleSimpleRandom = pd.read_csv("./datasets/samMainStudy/samples/simpleRandom.csv")
-        mainDRKM = pd.read_csv("./datasets/samMainStudy/maintenance/DirectReplacementKM.csv")
-        mainDTKM = pd.read_csv("./datasets/samMainStudy/maintenance/DynamicThresholdsKM.csv")
-        mainUpdateIfAv = pd.read_csv("./datasets/samMainStudy/maintenance/UpdateIfAvailable.csv")
-        mainResample = pd.read_csv("./datasets/samMainStudy/maintenance/Resample.csv")
-        mainNoUpdate = pd.read_csv("./datasets/samMainStudy/maintenance/No.csv")
-        print(dimension)
-        print(f"Dynamic Thresholds: {sp.mannwhitneyu(mainResample[dimension], mainDTKM[dimension], alternative='less', method='auto')}")
-        print(f"Direct Replacement: {sp.mannwhitneyu(mainResample[dimension], mainDRKM[dimension], alternative='less', method='auto')}")
-        print(f"Diferencia: {sp.mannwhitneyu(mainDTKM[dimension], mainDRKM[dimension], alternative='less', method='auto')}\n")
 
 
 

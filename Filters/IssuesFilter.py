@@ -14,7 +14,7 @@ class IssuesFilter(GraphqlFilter):
         closeIssuesQuery = util.readFile("APIQueries/Issues/closedIssues")
         openIssuesQuery = util.readFile("APIQueries/Issues/openIssues")
 
-        if (json['issues']['totalCount'] > 0):
+        if (json['issues']['totalCount'] > self.filter['closedIssuesCount']):
             states = {'closed': closeIssuesQuery, 'open': openIssuesQuery}
             newJson = {}
             for state, query in states.items():

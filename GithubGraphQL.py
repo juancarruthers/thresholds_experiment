@@ -11,6 +11,7 @@ import concurrent.futures
 from Filters.__init__ import *
 from Utilities import Utilities
 from dateutil import relativedelta
+from github import Github
 
 class GithubGraphQL:
 
@@ -93,6 +94,34 @@ class GithubGraphQL:
         except KeyboardInterrupt:
             self.quit = True
 
+    def updateFrame(self, listRepo:pd.DataFrame):
+        util = Utilities()
+        query = util.readFile("APIQueries/repositoryMetadataWID")
+        newDataset = excluded = pd.DataFrame(columns=listRepo.columns)
+
+        for id, repo in listRepo.iterrows():
+            variables = {'name': repo['name'], 'owner': repo['owner']}
+            repoQuery = {'query': query, 'variables': variables}
+            jsonResponse = util.makeRequest(repoQuery)['data']['repository']
+            self._filters[2].updateFrame(jsonResponse, repo['owner'], repo['name'])
+            self._filters[4].updateFrame(jsonResponse, repo['owner'], repo['name'])
+            updateFlag = not self._filters[5].updateFrame(jsonResponse, repo['owner'], repo['name'])
+            if updateFlag:
+                self._filters[1].updateFrame(jsonResponse, repo['owner'], repo['name'])
+                self._filters[3].updateFrame(jsonResponse, repo['owner'], repo['name'])
+                DFResponse = pd.DataFrame([jsonResponse])
+                row = repo.copy().to_frame().T
+                row[DFResponse.columns] = DFResponse.values
+                newDataset = pd.concat([newDataset, row])
+            else:
+                excluded = pd.concat([excluded, repo.copy().to_frame().T])
+
+
+
+
+
+
+
     def _replaceNestedPropertiesValues(self, repoProperties: dict) -> tuple[dict, bool]:
         if not self._quit:
 
@@ -110,6 +139,7 @@ class GithubGraphQL:
                     break
 
             return properties, filtersFlag
+
 
     def _setFilters(self, thresholds: dict) -> list[GraphqlFilter]:
         filters = ['keywords', 'totalSize', 'commits', 'closedIssuesCount', 'pullReqCount', 'dateLastActivity', 'contributors']

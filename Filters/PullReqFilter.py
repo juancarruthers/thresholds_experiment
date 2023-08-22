@@ -15,7 +15,7 @@ class PullReqFilter(GraphqlFilter):
         mergedPullReqQuery = util.readFile("APIQueries/PullReq/mergedPullReq")
         openPullReqQuery = util.readFile("APIQueries/PullReq/openPullReq")
 
-        if (json['pullRequests']['totalCount'] > 0):
+        if (json['pullRequests']['totalCount'] > self.filter['pullReqCount']):
             states = {'closed': closePullReqQuery, 'merged': mergedPullReqQuery, 'open': openPullReqQuery}
             newJson = {}
             for state, query in states.items():

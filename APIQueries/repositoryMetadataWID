@@ -1,0 +1,36 @@
+query($name: String!, $owner: String!){
+  repository(
+    name: $name
+    owner: $owner
+   ) {
+    forkCount
+    stargazerCount
+    languages(orderBy: {direction: DESC, field: SIZE}, first: 1) {
+      edges {
+        node {
+          name
+        }
+        size
+      }
+      totalSize
+    }
+    defaultBranchRef {
+      target {
+        ... on Commit {
+          history(first: 1) {
+            totalCount
+            nodes {
+              committedDate
+            }
+          }
+        }
+      }
+    }
+    issues(last: 1) {
+      totalCount
+    }
+    pullRequests(last: 1) {
+      totalCount
+    }
+  }
+}
