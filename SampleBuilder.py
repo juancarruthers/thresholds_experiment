@@ -12,7 +12,7 @@ def createSimpleRandomSample(dataset: pd.DataFrame, numberElements: int) -> pd.D
     sample = dataset.sample(numberElements)
     return sample
 
-def createKMeansStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], numberElements: int, nClusters = 6) -> pd.DataFrame:
+def createKMeansStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], numberElements: int, nClusters = 6, seed=0) -> pd.DataFrame:
     dimensionsKeys = []
     for dimension in dimensions:
         dimKey = dataset.columns.get_loc(dimension)
@@ -22,7 +22,7 @@ def createKMeansStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], n
 
     scaler = StandardScaler()
     data_scaled = scaler.fit_transform(analizedDimensions)
-    kmeans = KMeans(n_clusters=nClusters, init='k-means++', n_init=10)
+    kmeans = KMeans(n_clusters=nClusters, init='k-means++', n_init=10, random_state=seed)
     kmeans.fit(data_scaled)
     proportion = numberElements / dataset.shape[0]
     sample = pd.DataFrame()

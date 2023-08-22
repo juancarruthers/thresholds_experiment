@@ -50,10 +50,9 @@ def representativenessCheck(frame, sample, variables, pvalue) -> bool:
 
     return notRepresentative
 
-def samplingExperiment(frame: pd.DataFrame, sampleStrategy: str, dimensions: list[str], samplesPath: str, sampleSize: int, sigLevel:float) -> pd.DataFrame:
+def samplingExperiment(frame: pd.DataFrame, sampleStrategy: str, dimensions: list[str], sampleSize: int) -> pd.DataFrame:
 
     sample = pd.DataFrame()
-    notRepresentative = True
     if sampleStrategy == 'protodash':
         sample = SB.createProtodashSample(frame, dimensions, sampleSize)
     if sampleStrategy == 'diverse':
@@ -61,57 +60,47 @@ def samplingExperiment(frame: pd.DataFrame, sampleStrategy: str, dimensions: lis
     if sampleStrategy == 'stratified':
         sample = SB.createStratifiedSample(frame, dimensions, sampleSize)[0]
     if sampleStrategy == 'stratifiedKMeans':
-        while notRepresentative:
-            sample = SB.createKMeansStratifiedSample(frame, dimensions, sampleSize)
-            notRepresentative = representativenessCheck(frame, sample, dimensions, sigLevel)
+        sample = SB.createKMeansStratifiedSample(frame, dimensions, sampleSize) #7 clusters star experiment
     if sampleStrategy == 'simpleRandom':
-        while notRepresentative:
-            sample = SB.createSimpleRandomSample(frame, sampleSize)
-            notRepresentative = representativenessCheck(frame, sample, dimensions, sigLevel)
+        sample = SB.createSimpleRandomSample(frame, sampleSize)
+
 
     return sample
 
 
-def maintenanceExperiment(newFrame: pd.DataFrame, sample: pd.DataFrame, maintenanceStrategy: str, dimensions: list[str], samplesPath: str, sampleSize: int, sigLevel: float) -> pd.DataFrame:
+def maintenanceExperiment(newFrame: pd.DataFrame, sample: pd.DataFrame, maintenanceStrategy: str, dimensions: list[str], sampleSize: int) -> pd.DataFrame:
     maintainer = Maintenance(dimensions)
     sampleMaintained = pd.DataFrame()
 
     if maintenanceStrategy == 'DirectReplacementKM':
-        notRepresentative = True
-        while notRepresentative:
-            sampleMaintained = maintainer.updateSample(newFrame, sample, 'DR', 'kmeans', sampleSize, **{'nClusters': 6})[0]
-            notRepresentative = representativenessCheck(newFrame, sampleMaintained, dimensions, sigLevel)
+        sampleMaintained = maintainer.updateSample(newFrame, sample, 'DR', 'kmeans', sampleSize, **{'nClusters': 6})[0]
+
     elif maintenanceStrategy == 'DynamicThresholdsKM':
-        notRepresentative = True
-        while notRepresentative:
-            sampleMaintained = maintainer.updateSample(newFrame, sample, 'DT', 'kmeans', sampleSize, **{'nClusters': 6})[0]
-            notRepresentative = representativenessCheck(newFrame, sampleMaintained, dimensions, sigLevel)
+        sampleMaintained = maintainer.updateSample(newFrame, sample, 'DT', 'kmeans', sampleSize, **{'nClusters': 6})[0]
     elif maintenanceStrategy == 'UpdateIfAvailable':
         projectsUpdated = newFrame[newFrame['id'].isin(sample['id'])]
         projectsNotUpdated = sample[~sample['id'].isin(newFrame['id'])]
         sampleMaintained = pd.concat([projectsUpdated, projectsNotUpdated])
     elif maintenanceStrategy == 'Resample':
-        notRepresentative = True
-        while notRepresentative:
-            sampleMaintained = SB.createKMeansStratifiedSample(newFrame, dimensions, sampleSize)
-            notRepresentative = representativenessCheck(newFrame, sampleMaintained, dimensions, sigLevel)
+        sampleMaintained = SB.createKMeansStratifiedSample(newFrame, dimensions, sampleSize)
+
 
     if maintenanceStrategy == 'No':
         sampleMaintained = sample.copy()
 
     return sampleMaintained
-def experiment(frame: pd.DataFrame, experimentType: str, strategies: list[str], dimensions: list[str], samplesPath: str, sampleSize = 300, repetitions = 360, sigLevel = 0.05):
+def experiment(frame: pd.DataFrame, experimentType: str, strategies: list[str], dimensions: list[str], samplesPath: str, sampleSize = 300, repetitions = 360):
 
     emdDataFrame = pd.DataFrame(columns=dimensions)
     for strategy in strategies:
         for i in range(repetitions):
             sample = pd.DataFrame()
             if experimentType == 'sampling':
-                sample = samplingExperiment(frame, strategy, dimensions, samplesPath, sampleSize, sigLevel)
+                sample = samplingExperiment(frame, strategy, dimensions, sampleSize)
                 sample.to_csv(f"{samplesPath}{strategy}/s{i}.csv", index=False)
             elif experimentType == 'maintenance':
                 oldSample = pd.read_csv(f'./datasets/samMainStudy/samples/stratifiedKMeans/s{i}.csv')
-                sample = maintenanceExperiment(frame, oldSample, strategy, dimensions, samplesPath, sampleSize, sigLevel)
+                sample = maintenanceExperiment(frame, oldSample, strategy, dimensions, sampleSize)
                 sample.to_csv(f"{samplesPath}{strategy}/s{i}.csv", index=False)
 
             print(f'{strategy} Muestra Nº {i}')
@@ -140,19 +129,19 @@ if __name__ == '__main__':
                     'munaiahMetrics':{'coreContributors': 0, 'history': 0, 'issueFrequency': 0}
                     }
 
-    createFrame(queryFilter, secondFilter)
+    #createFrame(queryFilter, secondFilter)
 
-    frame1 = pd.read_csv("./datasets/longStudy/20221004/frame.csv")
+    frame1 = pd.read_csv("./datasets/longStudy/queryresults/20221004/frame.csv")
     dimensions = ['forkCount', 'stargazerCount', 'totalSize', 'commits', "closedIssuesCount", 'contributors',
                   "mergedPullReqCount", "closedPullReqCount"]
     path = "./datasets/samMainStudy/samples/"
-    sampling = ['stratified', 'stratifiedKMeans', 'simpleRandom']
-    #experiment(frame1, 'sampling', sampling, dimensions, path)
+    sampling = ['protodash','stratified', 'stratifiedKMeans', 'simpleRandom']
+    experiment(frame1, 'sampling', sampling, dimensions, path)
 
-    frame2 = pd.read_csv("./datasets/longStudy/20230301/frame.csv")
+    frame2 = pd.read_csv("./datasets/longStudy/queryresults/20230301/frame.csv")
     path2 = "./datasets/samMainStudy/maintenance/"
     maintenance = ['DirectReplacementKM', 'DynamicThresholdsKM', 'UpdateIfAvailable', 'Resample', 'No']
-    #experiment(frame2, 'maintenance', maintenance, dimensions, path2)
+    experiment(frame2, 'maintenance', maintenance, dimensions, path2)
 
 
     for dimension in dimensions:

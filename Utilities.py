@@ -4,7 +4,6 @@ import pandas as pd
 import random
 import requests
 import time
-from git import Repo, Git
 
 
 class Utilities:
