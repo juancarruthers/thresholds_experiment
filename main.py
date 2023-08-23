@@ -125,10 +125,10 @@ if __name__ == '__main__':
 
     queryFilter = "is:public, language:java, archived:false, mirror:false, forks:>=10, stars:>=10, created:<=" + str(oneYearAgo)
     secondFilter = {'keywords': ['sample', 'tutorial', 'demo', 'conf', 'exam'], 'totalSize': 10000, 'commits': 1000,
-                    'closedIssuesCount': 50, 'pullReqCount': 50, 'dateLastActivity': '2010-01-01', 'contributors': 0,
+                    'closedIssuesCount': 50, 'pullReqCount': 50, 'dateLastActivity': str(oneMonthAgo), 'contributors': 3,
                     'munaiahMetrics':{'coreContributors': 0, 'history': 0, 'issueFrequency': 0}
                     }
-    frame = pd.read_csv("./datasets/longStudy/queryresults/20221004/frame.csv")
+    frame = pd.read_csv("./datasets/longStudy/monthlydata/2023-06-01/frame.csv")
 
     #createFrame(queryFilter, secondFilter)
 

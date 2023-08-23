@@ -1,4 +1,5 @@
 import math
+import os
 import random
 import shutil
 import requests
@@ -11,7 +12,6 @@ import concurrent.futures
 from Filters.__init__ import *
 from Utilities import Utilities
 from dateutil import relativedelta
-from github import Github
 
 class GithubGraphQL:
 
@@ -43,6 +43,7 @@ class GithubGraphQL:
                     repoCountSubQuery = util.makeRequest(repoCountQuery)['data']['search']['repositoryCount']
 
                     j = 1
+                    k = 0
                     while (repoCountSubQuery >= 1000) | (repoCountSubQuery == 0):
                         if repoCountSubQuery >= 1000:
                             self._sizeInc -= j
@@ -51,10 +52,14 @@ class GithubGraphQL:
                         repoCountQuery = {'query': self._repoCountQueryFile, 'variables': {'query': self._queryVar + str(self._startSize) + ".." + str(self._startSize + self._sizeInc)}}
                         repoCountSubQuery = util.makeRequest(repoCountQuery)['data']['search']['repositoryCount']
                         j += j
+                        k += 1
+                        if k > 100:
+                            repoCount = 0
+                            break
 
                     repoCount -= repoCountSubQuery
                     cursor = None
-                    hasNextPage = True
+                    hasNextPage = repoCount > 0
 
                     while hasNextPage:
                         variables = {'first': self._elementPerPageMainQuery, 'cursor': cursor, 'query': self._queryVar + str(self._startSize) + ".." + str(self._startSize + self._sizeInc)}
@@ -90,22 +95,29 @@ class GithubGraphQL:
                 dataset = pd.DataFrame(self._df_data)
                 dataset = dataset.drop_duplicates(subset=['id'])
                 dataset.to_csv(self._folderPath + "/frame.csv", index=False)
-                shutil.rmtree('./.backup')
+                if (os.path.isdir('./.backup')):
+                    shutil.rmtree('./.backup')
+                return dataset
         except KeyboardInterrupt:
             self.quit = True
 
     def updateFrame(self, listRepo:pd.DataFrame):
         util = Utilities()
+        frame = self.main()
+        listRepo = listRepo[~listRepo['id'].isin(frame['id'])]
+
+        newDataset = pd.DataFrame(columns=listRepo.columns)
         query = util.readFile("APIQueries/repositoryMetadataWID")
-        newDataset = excluded = pd.DataFrame(columns=listRepo.columns)
 
         for id, repo in listRepo.iterrows():
             variables = {'name': repo['name'], 'owner': repo['owner']}
             repoQuery = {'query': query, 'variables': variables}
             jsonResponse = util.makeRequest(repoQuery)['data']['repository']
-            self._filters[2].updateFrame(jsonResponse, repo['owner'], repo['name'])
-            self._filters[4].updateFrame(jsonResponse, repo['owner'], repo['name'])
-            updateFlag = not self._filters[5].updateFrame(jsonResponse, repo['owner'], repo['name'])
+            commitFlag = self._filters[2].updateFrame(jsonResponse, repo['owner'], repo['name'])
+            pullReqFlag = self._filters[4].updateFrame(jsonResponse, repo['owner'], repo['name'])
+            updateFlag = False
+            if not (commitFlag or pullReqFlag):
+                updateFlag = not self._filters[5].updateFrame(jsonResponse, repo['owner'], repo['name'])
             if updateFlag:
                 self._filters[1].updateFrame(jsonResponse, repo['owner'], repo['name'])
                 self._filters[3].updateFrame(jsonResponse, repo['owner'], repo['name'])
@@ -113,13 +125,9 @@ class GithubGraphQL:
                 row = repo.copy().to_frame().T
                 row[DFResponse.columns] = DFResponse.values
                 newDataset = pd.concat([newDataset, row])
-            else:
-                excluded = pd.concat([excluded, repo.copy().to_frame().T])
-
-
-
-
-
+                print(f'{datetime.datetime.now()} - Added: {repo["url"]}')
+        frame = pd.concat([frame, newDataset])
+        frame.to_csv(self._folderPath + "/frameUpdated.csv", index=False)
 
 
     def _replaceNestedPropertiesValues(self, repoProperties: dict) -> tuple[dict, bool]:
