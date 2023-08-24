@@ -10,14 +10,14 @@ import scipy.stats as sp
 
 
 
-def createFrame(queryFilter: str, secondFilter: dict, savethreshold = 5000, p_itemsPageMainQuery = 30):
+def createFrame(queryFilter: str, secondFilter: dict, p_itemsPageMainQuery = 30):
     today = datetime.date.today()
 
     folderPath = "./datasets/" + str(today.year) + str(today.month) + str(today.day)
     if not (os.path.isdir(folderPath)):
         os.mkdir(folderPath)
 
-    projectRetriever = GQL(queryFilter, secondFilter, folderPath, p_saveThreshold=savethreshold, p_itemsPageMainQuery=p_itemsPageMainQuery)
+    projectRetriever = GQL(queryFilter, secondFilter, folderPath, p_itemsPageMainQuery=p_itemsPageMainQuery)
     projectRetriever.main()
 
 '''
@@ -128,9 +128,7 @@ if __name__ == '__main__':
                     'closedIssuesCount': 50, 'pullReqCount': 50, 'dateLastActivity': str(oneMonthAgo), 'contributors': 3,
                     'munaiahMetrics':{'coreContributors': 0, 'history': 0, 'issueFrequency': 0}
                     }
-    projectList = pd.read_csv("./datasets/longStudy/queryresults/20221017/frame.csv")
-
-    #createFrame(queryFilter, secondFilter)
+    projectList = pd.read_csv("./datasets/longStudy/listProj.csv")
 
     today = datetime.date.today()
 
@@ -138,8 +136,7 @@ if __name__ == '__main__':
     if not (os.path.isdir(folderPath)):
         os.mkdir(folderPath)
 
-    projectRetriever = GQL(queryFilter, secondFilter, folderPath, p_saveThreshold=5000,
-                           p_itemsPageMainQuery=30)
+    projectRetriever = GQL(queryFilter, secondFilter, folderPath, p_itemsPageMainQuery=30)
     projectRetriever.updateFrame(projectList)
 
 

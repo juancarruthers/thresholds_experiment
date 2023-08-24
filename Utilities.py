@@ -5,7 +5,6 @@ import random
 import requests
 import time
 
-
 class Utilities:
 
     def __init__(self):
@@ -55,7 +54,7 @@ class Utilities:
             print(response)
             if "or it could be a GitHub bug" in str(condition):
                 variables : dict = query['variables']
-                first = round(variables['first']/(2*iterations))
+                first = round(variables['first']/iterations)
                 query2['variables']['first'] = first
 
             time.sleep(random.choice(self._reqSleepTime))
@@ -69,7 +68,10 @@ class Utilities:
         try:
             if reqType == "POST":
                 response = requests.post(url, json=query, headers=headers, timeout=120).json()
-                condition = response.get("errors", False)
+                condition: bool | list = response.get("errors", False)
+                if condition and condition[0]['type'] == 'NOT_FOUND':
+                    return response, False
+
             else:
                 response = requests.get(url, headers=headers, timeout=120).json()
                 if not (type(response) is list):

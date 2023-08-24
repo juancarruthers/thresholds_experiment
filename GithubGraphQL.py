@@ -1,24 +1,16 @@
-import math
 import os
-import random
 import shutil
-import requests
 import pandas as pd
 import datetime
-import time
 import concurrent.futures
-
-
 from Filters.__init__ import *
 from Utilities import Utilities
-from dateutil import relativedelta
 
 class GithubGraphQL:
 
-    def __init__(self, queryFilter: str, secondFilter: dict, folderPath: str, p_saveThreshold = 5000, p_itemsPageMainQuery = 30):
+    def __init__(self, queryFilter: str, secondFilter: dict, folderPath: str, p_itemsPageMainQuery = 30):
         util = Utilities()
         self._startSize, self._sizeInc, self._df_data = util.restoreCheckPoint()
-        self._saveThreshold = p_saveThreshold
         self._queryVar = queryFilter + ", size:"
         self._filters = self._setFilters(secondFilter)
         self._queryFile = util.readFile("APIQueries/repositoryMetadata")
@@ -35,7 +27,6 @@ class GithubGraphQL:
             repoCount = util.makeRequest(repoCountQuery)['data']['search']['repositoryCount']
 
             if repoCount > 0:
-                projectsSaved = 0
 
                 while repoCount > 0:
 
@@ -57,9 +48,10 @@ class GithubGraphQL:
                             repoCount = 0
                             break
 
+                    util.saveCheckPoint(self._startSize, self._sizeInc, self._df_data)
                     repoCount -= repoCountSubQuery
-                    cursor = None
                     hasNextPage = repoCount > 0
+                    cursor = None
 
                     while hasNextPage:
                         variables = {'first': self._elementPerPageMainQuery, 'cursor': cursor, 'query': self._queryVar + str(self._startSize) + ".." + str(self._startSize + self._sizeInc)}
@@ -69,7 +61,7 @@ class GithubGraphQL:
 
                         #PARALELISM
                         executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
-                        futures = {executor.submit(self._replaceNestedPropertiesValues, repoProperties) for repoProperties in repositories['edges']['node']}
+                        futures = {executor.submit(self._replaceNestedPropertiesValues, repoProperties['node']) for repoProperties in repositories['edges']}
                         for future in concurrent.futures.as_completed(futures):
                             repositoryProperties, filtersFlag = future.result()
                             if not filtersFlag:
@@ -79,12 +71,6 @@ class GithubGraphQL:
                         hasNextPage = repositories['pageInfo']['hasNextPage']
                         if hasNextPage:
                             cursor = repositories['pageInfo']['endCursor']
-
-                    projectsSaved += repoCountSubQuery
-
-                    if projectsSaved > self._saveThreshold:
-                        util.saveCheckPoint(self._startSize, self._sizeInc, self._df_data)
-                        projectsSaved = 0
 
                     self._startSize += self._sizeInc
 
@@ -102,28 +88,31 @@ class GithubGraphQL:
             self.quit = True
 
     def updateFrame(self, listRepo:pd.DataFrame, language='Java'):
-        frame = self.main()
-        listRepo = listRepo[~listRepo['url'].isin(frame['url'])]
+        try:
+            frame = self.main()
+            listRepo = listRepo[~listRepo['url'].isin(frame['url'])]
 
-        newDataset = []
-        chunkSize = 30
+            newDataset = []
+            chunkSize = 30
 
-        for chunk_start in range(0, listRepo.shape[0], chunkSize):
-            chunk_end = chunk_start + chunkSize
-            chunk = listRepo.iloc[chunk_start:chunk_end]
+            for chunk_start in range(0, listRepo.shape[0], chunkSize):
+                chunk_end = chunk_start + chunkSize
+                chunk = listRepo.iloc[chunk_start:chunk_end]
 
-            # PARALELISM
-            executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
-            futures = {executor.submit(self._getRepoDataByName, _, repo) for _, repo in chunk.iterrows()}
-            for future in concurrent.futures.as_completed(futures):
-                repositoryProperties, filtersFlag = future.result()
-                if not filtersFlag and repositoryProperties['primaryLanguage'] == language:
-                    newDataset.append(repositoryProperties)
-                    print(f'{datetime.datetime.now()} - Added: {repositoryProperties["url"]}')
+                # PARALELISM
+                executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+                futures = {executor.submit(self._getRepoDataByName, _, repo) for _, repo in chunk.iterrows()}
+                for future in concurrent.futures.as_completed(futures):
+                    repositoryProperties, filtersFlag = future.result()
+                    if not filtersFlag and repositoryProperties['primaryLanguage'] == language:
+                        newDataset.append(repositoryProperties)
+                        print(f'{datetime.datetime.now()} - Added: {repositoryProperties["url"]}')
 
-        updatedRepos = pd.DataFrame(newDataset)
-        frame = pd.concat([frame, updatedRepos])
-        frame.to_csv(self._folderPath + "/frameUpdated.csv", index=False)
+            updatedRepos = pd.DataFrame(newDataset)
+            frame = pd.concat([frame, updatedRepos])
+            frame.to_csv(self._folderPath + "/frameUpdated.csv", index=False)
+        except KeyboardInterrupt:
+            self.quit = True
 
 
     def _getRepoDataByName(self, _, repo: pd.DataFrame):
@@ -132,9 +121,12 @@ class GithubGraphQL:
         query = util.readFile("APIQueries/repositoryMetadataWID")
         repoQuery = {'query': query, 'variables': variables}
         jsonResponse = util.makeRequest(repoQuery)['data']['repository']
-        repoProperties, filtersFlag = self._replaceNestedPropertiesValues(jsonResponse)
+        if jsonResponse != None:
+            jsonResponse, filtersFlag = self._replaceNestedPropertiesValues(jsonResponse)
+        else:
+            return jsonResponse, True
 
-        return repoProperties, filtersFlag
+        return jsonResponse, filtersFlag
 
 
     def _replaceNestedPropertiesValues(self, repoProperties: dict) -> tuple[dict, bool]:
