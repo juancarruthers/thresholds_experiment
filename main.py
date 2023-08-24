@@ -128,7 +128,7 @@ if __name__ == '__main__':
                     'closedIssuesCount': 50, 'pullReqCount': 50, 'dateLastActivity': str(oneMonthAgo), 'contributors': 3,
                     'munaiahMetrics':{'coreContributors': 0, 'history': 0, 'issueFrequency': 0}
                     }
-    frame = pd.read_csv("./datasets/longStudy/monthlydata/2023-06-01/frame.csv")
+    projectList = pd.read_csv("./datasets/longStudy/queryresults/20221017/frame.csv")
 
     #createFrame(queryFilter, secondFilter)
 
@@ -140,7 +140,7 @@ if __name__ == '__main__':
 
     projectRetriever = GQL(queryFilter, secondFilter, folderPath, p_saveThreshold=5000,
                            p_itemsPageMainQuery=30)
-    projectRetriever.updateFrame(frame)
+    projectRetriever.updateFrame(projectList)
 
 
 

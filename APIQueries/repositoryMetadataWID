@@ -3,34 +3,44 @@ query($name: String!, $owner: String!){
     name: $name
     owner: $owner
    ) {
-    forkCount
-    stargazerCount
-    languages(orderBy: {direction: DESC, field: SIZE}, first: 1) {
-      edges {
-        node {
+    id
           name
-        }
-        size
-      }
-      totalSize
-    }
-    defaultBranchRef {
-      target {
-        ... on Commit {
-          history(first: 1) {
-            totalCount
-            nodes {
-              committedDate
+          owner {
+            login
+          }
+          stargazerCount
+          url
+          isPrivate
+          isArchived
+          isMirror
+          forkCount
+          createdAt
+          languages(orderBy: {direction: DESC, field: SIZE}, first: 1) {
+            edges {
+              node {
+                name
+              }
+              size
+            }
+            totalSize
+          }
+          defaultBranchRef {
+            target {
+              ... on Commit {
+                history(first: 1) {
+                  totalCount
+                  nodes {
+                    committedDate
+                  }
+                }
+              }
             }
           }
-        }
-      }
-    }
-    issues(last: 1) {
-      totalCount
-    }
-    pullRequests(last: 1) {
-      totalCount
-    }
+          issues(last: 1) {
+            totalCount
+          }
+          pullRequests(last: 1) {
+            totalCount
+          }
   }
 }

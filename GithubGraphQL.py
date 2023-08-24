@@ -69,7 +69,7 @@ class GithubGraphQL:
 
                         #PARALELISM
                         executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
-                        futures = {executor.submit(self._replaceNestedPropertiesValues, repoProperties) for repoProperties in repositories['edges']}
+                        futures = {executor.submit(self._replaceNestedPropertiesValues, repoProperties) for repoProperties in repositories['edges']['node']}
                         for future in concurrent.futures.as_completed(futures):
                             repositoryProperties, filtersFlag = future.result()
                             if not filtersFlag:
@@ -101,52 +101,58 @@ class GithubGraphQL:
         except KeyboardInterrupt:
             self.quit = True
 
-    def updateFrame(self, listRepo:pd.DataFrame):
-        util = Utilities()
+    def updateFrame(self, listRepo:pd.DataFrame, language='Java'):
         frame = self.main()
-        listRepo = listRepo[~listRepo['id'].isin(frame['id'])]
+        listRepo = listRepo[~listRepo['url'].isin(frame['url'])]
 
-        newDataset = pd.DataFrame(columns=listRepo.columns)
-        query = util.readFile("APIQueries/repositoryMetadataWID")
+        newDataset = []
+        chunkSize = 30
 
-        for id, repo in listRepo.iterrows():
-            variables = {'name': repo['name'], 'owner': repo['owner']}
-            repoQuery = {'query': query, 'variables': variables}
-            jsonResponse = util.makeRequest(repoQuery)['data']['repository']
-            commitFlag = self._filters[2].updateFrame(jsonResponse, repo['owner'], repo['name'])
-            pullReqFlag = self._filters[4].updateFrame(jsonResponse, repo['owner'], repo['name'])
-            updateFlag = False
-            if not (commitFlag or pullReqFlag):
-                updateFlag = not self._filters[5].updateFrame(jsonResponse, repo['owner'], repo['name'])
-            if updateFlag:
-                self._filters[1].updateFrame(jsonResponse, repo['owner'], repo['name'])
-                self._filters[3].updateFrame(jsonResponse, repo['owner'], repo['name'])
-                DFResponse = pd.DataFrame([jsonResponse])
-                row = repo.copy().to_frame().T
-                row[DFResponse.columns] = DFResponse.values
-                newDataset = pd.concat([newDataset, row])
-                print(f'{datetime.datetime.now()} - Added: {repo["url"]}')
-        frame = pd.concat([frame, newDataset])
+        for chunk_start in range(0, listRepo.shape[0], chunkSize):
+            chunk_end = chunk_start + chunkSize
+            chunk = listRepo.iloc[chunk_start:chunk_end]
+
+            # PARALELISM
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+            futures = {executor.submit(self._getRepoDataByName, _, repo) for _, repo in chunk.iterrows()}
+            for future in concurrent.futures.as_completed(futures):
+                repositoryProperties, filtersFlag = future.result()
+                if not filtersFlag and repositoryProperties['primaryLanguage'] == language:
+                    newDataset.append(repositoryProperties)
+                    print(f'{datetime.datetime.now()} - Added: {repositoryProperties["url"]}')
+
+        updatedRepos = pd.DataFrame(newDataset)
+        frame = pd.concat([frame, updatedRepos])
         frame.to_csv(self._folderPath + "/frameUpdated.csv", index=False)
+
+
+    def _getRepoDataByName(self, _, repo: pd.DataFrame):
+        util = Utilities()
+        variables = {'name': repo['name'], 'owner': repo['owner']}
+        query = util.readFile("APIQueries/repositoryMetadataWID")
+        repoQuery = {'query': query, 'variables': variables}
+        jsonResponse = util.makeRequest(repoQuery)['data']['repository']
+        repoProperties, filtersFlag = self._replaceNestedPropertiesValues(jsonResponse)
+
+        return repoProperties, filtersFlag
 
 
     def _replaceNestedPropertiesValues(self, repoProperties: dict) -> tuple[dict, bool]:
         if not self._quit:
 
-            properties = repoProperties['node']
-            owner = properties['owner']['login']
-            repositoryName = properties['name']
+            owner = repoProperties['owner']['login']
+            repositoryName = repoProperties['name']
 
             filtersFlag = False
-            properties["owner"] = owner
+            repoProperties["owner"] = owner
 
             #NORMALIZE OUTPUT
             for filter in self._filters:
-                filtersFlag = filter.updateFrame(properties, owner, repositoryName)
+                filtersFlag = filter.updateFrame(repoProperties, owner, repositoryName)
                 if filtersFlag:
                     break
 
-            return properties, filtersFlag
+            return repoProperties, filtersFlag
 
 
     def _setFilters(self, thresholds: dict) -> list[GraphqlFilter]:
