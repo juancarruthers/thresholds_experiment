@@ -9,4 +9,6 @@ scikit-learn
 scikit-posthocs
 scipy
 statsmodels
+seaborn
+matplotlib
 
