@@ -6,6 +6,10 @@ from dateutil.relativedelta import relativedelta
 #import SampleBuilder as SB
 from GithubGraphQL import GithubGraphQL as GQL
 import scipy.stats as sp
+
+from Utilities import Utilities
+
+
 #from Maintenance import Maintenance
 
 
@@ -119,25 +123,15 @@ def experiment(frame: pd.DataFrame, experimentType: str, strategies: list[str], 
 
 
 if __name__ == '__main__':
-    today = datetime.date.today()
-    oneYearAgo = today - relativedelta(years=1)
-    oneMonthAgo = today - relativedelta(months=1)
 
-    queryFilter = "is:public, language:java, archived:false, mirror:false, forks:>=10, stars:>=10, created:<=" + str(oneYearAgo)
-    secondFilter = {'keywords': ['sample', 'tutorial', 'demo', 'conf', 'exam'], 'totalSize': 10000, 'commits': 1000,
-                    'closedIssuesCount': 50, 'pullReqCount': 50, 'dateLastActivity': str(oneMonthAgo), 'contributors': 3,
-                    'munaiahMetrics':{'coreContributors': 0, 'history': 0, 'issueFrequency': 0}
-                    }
-    projectList = pd.read_csv("./datasets/longStudy/listProj.csv")
 
-    today = datetime.date.today()
+    util = Utilities()
+    data = pd.read_csv('./datasets/samMainStudy/samples/stratifiedKMeans/s0.csv')
+    dataset = util.generateDataset(data, "../sm/SM/repos")
 
-    folderPath = "./datasets/" + str(today.year) + str(today.month) + str(today.day)
-    if not (os.path.isdir(folderPath)):
-        os.mkdir(folderPath)
+    dataset.to_csv('./datasets/caseStudy/downloadTestSet/metrics.csv', index=False)
 
-    projectRetriever = GQL(queryFilter, secondFilter, folderPath, p_itemsPageMainQuery=30)
-    projectRetriever.updateFrame(projectList)
+
 
 
 
