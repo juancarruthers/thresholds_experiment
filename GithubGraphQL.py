@@ -3,6 +3,9 @@ import shutil
 import pandas as pd
 import datetime
 import concurrent.futures
+
+from scipy.spatial.distance import euclidean
+
 from Filters.__init__ import *
 from Utilities import Utilities
 
@@ -11,7 +14,8 @@ class GithubGraphQL:
     def __init__(self, queryFilter: str, secondFilter: dict, folderPath: str, p_itemsPageMainQuery = 30):
         util = Utilities()
         self._startSize, self._sizeInc, self._df_data = util.restoreCheckPoint()
-        self._queryVar = queryFilter + ", size:"
+        if queryFilter != "": self._queryVar = queryFilter + ", size:"
+        else: self._queryVar = "size:"
         self._filters = self._setFilters(secondFilter)
         self._queryFile = util.readFile("APIQueries/repositoryMetadata")
         self._repoCountQueryFile = util.readFile("APIQueries/repositoryCount")
@@ -19,7 +23,7 @@ class GithubGraphQL:
         self._folderPath = folderPath
         self._quit = False
 
-    def main(self):
+    def _exploreRepos(self):
         try:
             util = Utilities()
             start = datetime.datetime.now()
@@ -87,11 +91,14 @@ class GithubGraphQL:
         except KeyboardInterrupt:
             self.quit = True
 
-    def updateFrame(self, listRepo:pd.DataFrame, language='Java'):
+    def extractFrame(self, listRepo:pd.DataFrame, language='Java'):
         try:
-            frame = self.main()
+            frame = self._exploreRepos()
             listRepo = listRepo[~listRepo['url'].isin(frame['url'])]
 
+            newDataset = self._getRepoDataByURL(listRepo, language)
+
+            '''
             newDataset = []
             chunkSize = 30
 
@@ -107,13 +114,76 @@ class GithubGraphQL:
                     if not filtersFlag and repositoryProperties['primaryLanguage'] == language:
                         newDataset.append(repositoryProperties)
                         print(f'{datetime.datetime.now()} - Added: {repositoryProperties["url"]}')
+            '''
 
             updatedRepos = pd.DataFrame(newDataset)
             frame = pd.concat([frame, updatedRepos])
+            print(f"Number of projects in the dataset: {frame.shape[0]}")
+            frame = frame.drop_duplicates(subset=['id'])
+            print(f"Without duplicates: {frame.shape[0]}")
             frame.to_csv(self._folderPath + "/frameUpdated.csv", index=False)
         except KeyboardInterrupt:
             self.quit = True
 
+
+    def updateSample(self, sample: pd.DataFrame, language='Java'):
+
+        updatedDataset = pd.DataFrame(self._getRepoDataByURL(sample, language))
+
+        if sample.shape[0] > updatedDataset.shape[0]:
+            toUpdate = sample[~sample['id'].isin(updatedDataset['id'])]
+            for id, project in toUpdate.iterrows():
+                similar = self.getsimilarProjects(project['totalSize']/1024, sample)
+                updatedDataset = pd.concat([updatedDataset, similar])
+
+        return updatedDataset
+
+    def _getRepoDataByURL(self, listRepo:pd.DataFrame, language='Java'):
+
+        newDataset = []
+        chunkSize = 30
+
+        for chunk_start in range(0, listRepo.shape[0], chunkSize):
+            chunk_end = chunk_start + chunkSize
+            chunk = listRepo.iloc[chunk_start:chunk_end]
+
+            # PARALELISM
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+            futures = {executor.submit(self._getRepoDataByName, _, repo) for _, repo in chunk.iterrows()}
+            for future in concurrent.futures.as_completed(futures):
+                repositoryProperties, filtersFlag = future.result()
+                if not filtersFlag and repositoryProperties['primaryLanguage'] == language:
+                    newDataset.append(repositoryProperties)
+                    print(f'{datetime.datetime.now()} - Added: {repositoryProperties["url"]}')
+
+        return newDataset
+
+
+    def getsimilarProjects(self, totalSize:int, sample):
+        util = Utilities()
+        candidates = pd.DataFrame()
+        delta = 5000
+        jsonResponse = {}
+
+        while len(jsonResponse) == 0:
+            variables = {'first': self._elementPerPageMainQuery, 'query': f"{self._queryVar}{totalSize - delta}..{totalSize + delta}"}
+            repoQuery = {'query': self._queryFile, 'variables': variables}
+            jsonResponse = util.makeRequest(repoQuery)
+            delta = delta + delta
+
+            if len(jsonResponse) > 0:
+                repositories = jsonResponse['data']['search']
+                for repoProperties in repositories['edges']:
+
+                    repositoryProperties, filtersFlag = self._replaceNestedPropertiesValues(repoProperties['node'])
+                    if not filtersFlag:
+                        repositoryProperties['distance'] = euclidean(totalSize, repositoryProperties['totalSize'])
+                        candidates = pd.concat([candidates, repositoryProperties])
+
+                candidates = candidates[~candidates['id'].isin(sample['id'])]
+
+        candidates = candidates.sort_values(by='distance', ascending=True)
+        return candidates.iloc[0]
 
     def _getRepoDataByName(self, _, repo: pd.DataFrame):
         util = Utilities()
