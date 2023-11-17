@@ -94,8 +94,10 @@ class Utilities:
             exit()
 
     def generateDataset(self, dataset: pd.DataFrame, path: str):
-        data = pd.DataFrame()
-        scanTool = SourceMeter('./SourceMeter/SMResults','./SourceMeter/tool/Java/AnalyzerJava.exe', path)
+        classData = pd.DataFrame()
+        methodData = pd.DataFrame()
+        packageData = pd.DataFrame()
+        scanTool = SourceMeter('./SourceMeter/SMResults','../sm/SM/sourcemeter/Java/AnalyzerJava.exe', path)
         repoQuantity = dataset.shape[0]
         step = 10
         for i in range(0, repoQuantity, step):
@@ -103,11 +105,13 @@ class Utilities:
             executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
             futures = {executor.submit(self._generateRepositoryData, value, path, scanTool) for key, value in set.iterrows()}
             for future in concurrent.futures.as_completed(futures):
-                classInfo = future.result()
-                if classInfo.shape[0] > 0:
-                    data = pd.concat([data, classInfo[['Repository', 'Path', 'CBO', 'DIT', 'LCOM5', 'NOC', 'RFC', 'WMC']]], axis=0)
+                classDataProj, methodDataProj, packageDataProj = future.result()
+                if classDataProj.shape[0] > 0:
+                    classData = pd.concat([classData, classDataProj], axis=0)
+                    methodData = pd.concat([methodData, methodDataProj], axis=0)
+                    packageData = pd.concat([packageData, packageDataProj], axis=0)
 
-        return data
+        return classData, methodData, packageData
 
 
     def _generateRepositoryData(self, project, path, scanTool):
@@ -121,16 +125,20 @@ class Utilities:
             classMetricsPath = f'{scanTool.getResultsDir()}/{project["name"]}/java/'
             p = Path(classMetricsPath)
             sub = [x for x in p.iterdir() if x.is_dir()]
-            metricsData = pd.read_csv(f'{sub[len(sub) - 1]}/{project["name"]}-Class.csv')
+            classData = pd.read_csv(f'{sub[len(sub) - 1]}/{project["name"]}-Class.csv')
+            methodData = pd.read_csv(f'{sub[len(sub) - 1]}/{project["name"]}-Method.csv')
+            packageData = pd.read_csv(f'{sub[len(sub) - 1]}/{project["name"]}-Package.csv')
 
             self._deleteFolder(f'{scanTool.getResultsDir()}/{project["name"]}')
 
-            metricsData['Repository'] = project['url']
-            return metricsData
+            classData['Repository'] = project['url']
+            methodData['Repository'] = project['url']
+            packageData['Repository'] = project['url']
+            return classData, methodData, packageData
 
         except Exception as error:
-            print (error)
-            return pd.DataFrame()
+            print(error)
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
     def _deleteFolder(self, folder):
         try:
