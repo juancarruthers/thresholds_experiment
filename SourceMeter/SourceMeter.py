@@ -10,10 +10,11 @@ class SourceMeter:
         self._projectsPath = os.path.abspath(projPath)
         self._threadsNumber = numberOfThreads
 
-    def analyze(self, projectName):
+    def analyze(self, projectName, projectFolder):
 
-        command = f'{self._toolPath} -projectName={projectName} -projectBaseDir={self._projectsPath}/{projectName} -resultsDir={self._resultsDir} ' \
-                  f'-runPMD=false -runFB=false -runAndroidHunter=false -runVulnerabilityHunter=false runFaultHunter=false ' \
+
+        command = f'{self._toolPath} -projectName={projectName} -projectBaseDir={self._projectsPath}/{projectFolder} -resultsDir={self._resultsDir} ' \
+                  f'-runPMD=false -runFB=false -runAndroidHunter=false -runVulnerabilityHunter=false -runFaultHunter=false ' \
                   f'-runMetricHunter=false -runRTEHunter=false -runDCF=false -runMET=true -runUDM=false ' \
                   f'-runLIM2Patterns=false -maximumThreads={self._threadsNumber}'
 
@@ -36,3 +37,4 @@ class SourceMeter:
 
     def getResultsDir(self):
         return self._resultsDir
+
