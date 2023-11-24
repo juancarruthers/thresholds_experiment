@@ -9,3 +9,5 @@ SM
 __pycache__
 datasets
 Health_Indicator_Prediction
+SourceMeter/tool
+SourceMeter/SMResults

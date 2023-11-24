@@ -1,9 +1,11 @@
-import concurrent.futures
-import os.path
+import shutil
+import stat
 import pandas as pd
 import random
 import requests
 import time
+import os
+
 
 class Utilities:
 
@@ -87,28 +89,29 @@ class Utilities:
             print(err)
             exit()
 
-    def downloadDataset(self, dataset: pd.DataFrame, path: str):
-        repoQuantity = dataset.shape[0]
-        step = 10
-        for i in range(0, repoQuantity, step):
-            set = dataset[dataset.index.isin(range(i, i + step))]
-            executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
-            futures = {executor.submit(self._cloneRepositories, value, path) for key, value in set.iterrows()}
-            for future in concurrent.futures.as_completed(futures):
-                repo = future.result()
-                print(f'Downloaded Repository {repo}')
+    def deleteFolder(self, folder):
+        try:
+            shutil.rmtree(folder)
 
-    def _cloneRepositories(self, project: pd.DataFrame, clonePath: str):
-        filePath = f'{clonePath}/{project["name"]}.zip'
-        url = f'https://api.github.com/repos/{project["owner"]}/{project["name"]}/zipball'
-        tokens = self.readFile("token").split(",\n")
-        headers = {'Authorization': 'Bearer ' + random.choice(tokens)}
-        r = requests.get(url, headers=headers)
-        if r.status_code == 200:
-            with open(filePath, 'wb') as fh:
-                fh.write(r.content)
-        else:
-            print(r.text)
+        except PermissionError as error:
+            if error.errno == 13:
+                os.chmod(error.filename, stat.S_IWUSR | stat.S_IREAD)
+                self.deleteFolder(folder)
 
-        return project['url']
+
+
+
+
+
+
+
+
+
+                
+
+
+
+
+
+
 
