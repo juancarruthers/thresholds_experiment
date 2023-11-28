@@ -152,7 +152,9 @@ class GithubGraphQL:
             futures = {executor.submit(self._getRepoDataByName, _, repo) for _, repo in chunk.iterrows()}
             for future in concurrent.futures.as_completed(futures):
                 repositoryProperties, filtersFlag = future.result()
-                if not filtersFlag and repositoryProperties['primaryLanguage'] == language:
+                if language == "*": languageFlag = True
+                else: languageFlag = repositoryProperties['primaryLanguage'] == language
+                if not filtersFlag and languageFlag:
                     newDataset.append(repositoryProperties)
                     print(f'{datetime.datetime.now()} - Added: {repositoryProperties["url"]}')
 

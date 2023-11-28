@@ -10,7 +10,7 @@ class SizeFilter(GraphqlFilter):
 
         if totalSize > 0:
             newJson = {"primaryLanguage": json['languages']['edges'][0]['node']['name'],
-                       "totalSize": json['languages']['totalSize']}
+                       "totalSize": json['languages']['edges'][0]['size']}
         else:
             newJson = {"primaryLanguage": "-", "totalSize": 0}
 
