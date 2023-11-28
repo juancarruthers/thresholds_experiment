@@ -5,6 +5,9 @@ from DiversityScore import DiversityScore
 from GithubGraphQL import GithubGraphQL
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
+from scipy.spatial.distance import euclidean, cosine
+
+from SourceMeter.DatasetGenerator import DatasetGenerator
 
 
 class Maintenance:
@@ -15,7 +18,7 @@ class Maintenance:
 
     '''
     methods: DR y DT
-    clustering: nagg y kmeans
+    clustering (DT): nagg y kmeans
     *args nClusters = 6
     '''
     def updateSample(self, frame:pd.DataFrame, sample: pd.DataFrame, method: str, clustering:str, sampleExpectedSize = 0, **args) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -27,6 +30,16 @@ class Maintenance:
             sampleSize = SB.sampleSize(frame.shape[0])
 
         nClusters = args['nClusters']
+        if method == 'DR':
+            projectsToUpdate = sample[~sample['id'].isin(frame['id'])]
+            sampleUpdated = sample[sample['id'].isin(frame['id'])]
+            replacements = self.directReplacement(sampleUpdated, frame, projectsToUpdate)
+            sampleUpdated = pd.concat([sampleUpdated, replacements])
+        else:
+            sampleUpdated = self._naggClustering(frame, frameWithoutUpdatedSample, sampleUpdated, sampleSize, method)
+
+        '''
+        nClusters = args['nClusters']
         if clustering == 'kmeans':
             if method == 'DT':
                 sampleUpdated = self._dynamicThresholds(frame, frameWithoutUpdatedSample, sampleUpdated, sampleSize, nClusters)
@@ -34,6 +47,7 @@ class Maintenance:
                 sampleUpdated = self._directReplacement(sample, frame, nClusters)
         else:
             sampleUpdated = self._naggClustering(frame, frameWithoutUpdatedSample, sampleUpdated, sampleSize, method)
+        '''
 
         '''sampleDifference = sampleSize - sampleUpdated.shape[0]
         if 0 <= sampleDifference <= pool.shape[0]:
@@ -80,7 +94,7 @@ class Maintenance:
 
         return sampleUpdated
 
-    def _directReplacement(self, sample, frame, clusters):
+    def _directReplacement2(self, sample, frame, clusters):
         dimensionsKeys = []
         for dimension in self._dimensions:
             dimKey = sample.columns.get_loc(dimension)
@@ -109,6 +123,36 @@ class Maintenance:
 
         return sampleUpdated
 
+
+    def directReplacement(self, sampleUpdated, frame, projectsToUpdate, order=0):
+
+        dimensionsKeys = []
+        for dimension in self._dimensions:
+            dimKey = sampleUpdated.columns.get_loc(dimension)
+            dimensionsKeys.append(dimKey)
+
+        columns = sampleUpdated.columns.tolist()
+        replacements = pd.DataFrame()
+        frame = frame[~frame['id'].isin(sampleUpdated['id'])]
+        frameArray = frame.values
+
+
+        for id, project in projectsToUpdate.iterrows():
+
+            distances = np.apply_along_axis(lambda row: euclidean(row[dimensionsKeys], project[self._dimensions].values), 1, frameArray)
+            distances = distances.reshape(-1, 1)
+            sorted = np.concatenate((frameArray, distances), axis=1)
+            sorted = sorted[sorted[:, -1].argsort()]
+            similar = sorted[order, :-1]
+            similar = similar.reshape(1, -1)
+            frameArray = sorted[1:, :-1]
+
+            replacements = pd.concat([replacements, pd.DataFrame(similar, columns=columns)])
+
+        return replacements
+
+
+    # NEW REQ
 
     def _naggClustering(self, frame, frameAux, sampleUpdated, sampleSize, method: str):
         diverseSample = SB.createDiverseSample(frame, self._dimensions)
