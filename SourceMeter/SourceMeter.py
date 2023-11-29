@@ -23,11 +23,11 @@ class SourceMeter:
                                 shell=True).stdout
         except Exception as error:
             print(error)
-            self._logAnalysisError(projectName)
+            self.logAnalysisError(projectName)
             raise Exception("Analysis execution error")
 
 
-    def _logAnalysisError(self, name):
+    def logAnalysisError(self, name):
         logFilePath = os.path.abspath(f'{self._resultsDir}/error-log.txt')
         if not os.path.exists(logFilePath):
             open(logFilePath, "x")

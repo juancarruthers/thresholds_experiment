@@ -9,11 +9,13 @@ from SourceMeter import SourceMeter
 from Utilities import Utilities
 
 class DatasetGenerator:
-    def __init__(self, analyzer: SourceMeter):
+    def __init__(self, analyzer: SourceMeter, downloadPath: str, targetDate=""):
         self._analyzer = analyzer
+        self._downloadPath = downloadPath
+        self._targetDate = targetDate
         self._util = Utilities()
 
-    def generateDataset(self, dataset: pd.DataFrame, downloadPath: str, date="", threads=4) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    def generateDataset(self, dataset: pd.DataFrame, threads=4) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         classData = pd.DataFrame()
         methodData = pd.DataFrame()
         packageData = pd.DataFrame()
@@ -23,7 +25,7 @@ class DatasetGenerator:
         for i in range(0, repoQuantity, step):
             set = dataset[dataset.index.isin(range(i, i + step))]
             executor = concurrent.futures.ThreadPoolExecutor(max_workers=threads)
-            futures = {executor.submit(self._downloadRepositoryData, value, downloadPath, date) for key, value in set.iterrows()}
+            futures = {executor.submit(self._downloadRepositoryData, value) for key, value in set.iterrows()}
 
             for future in concurrent.futures.as_completed(futures):
                 classDataProj, methodDataProj, packageDataProj = future.result()
@@ -32,16 +34,21 @@ class DatasetGenerator:
                     methodData = pd.concat([methodData, methodDataProj], axis=0)
                     packageData = pd.concat([packageData, packageDataProj], axis=0)
 
-        return classData, methodData, packageData
+        remainingProjects = dataset[~dataset['url'].isin(packageData['Repository'])]
 
+        return classData, methodData, packageData, remainingProjects
 
-    def _downloadRepositoryData(self, project: pd.Series, downloadPath: str, date="") -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-        self._cloneRepository(project, downloadPath)
-        print(f'Downloaded Repository {project["url"]}')
-        if date:
-            self._checkoutRepoByDate(f'{downloadPath}/{project["name"]}', date)
+    def _downloadRepositoryData(self, project: pd.Series) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        try:
+            self._cloneRepository(project, self._downloadPath)
+            print(f'Downloaded Repository {project["url"]}')
+            if self._targetDate:
+                self._checkoutRepoByDate(f'{self._downloadPath}/{project["name"]}')
 
-        return self._scanProject(project, downloadPath, project['name'])
+            return self._scanProject(project, self._downloadPath, project['name'])
+        except Exception as error:
+            self._analyzer.logAnalysisError(project['url'])
+            return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 
     def _scanProject(self, project: pd.Series, path: str, folderName: str):
@@ -78,12 +85,13 @@ class DatasetGenerator:
 
         except Exception as error:
             print(error)
+            raise Exception("Clone error")
 
 
-    def _checkoutRepoByDate(self, repoPath: str, date: str) -> None:
+    def _checkoutRepoByDate(self, repoPath: str) -> None:
         repo = Repo(repoPath)
         branch = repo.head.ref.name
-        commits = list(repo.iter_commits(branch, until=date))
+        commits = list(repo.iter_commits(branch, until=self._targetDate))
 
         if commits:
             commit = commits[0]
@@ -91,6 +99,7 @@ class DatasetGenerator:
                 repo.git.checkout(commit.hexsha)
             except Exception as error:
                 print(error)
+                raise Exception("Checkout error")
 
     def generateQualitasMetrics(self, projectsPath: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         classData = pd.DataFrame()
