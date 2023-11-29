@@ -198,3 +198,26 @@ def generateGroupsOutput(stratifiedSampleGroups: list, sample: pd.DataFrame) -> 
     groupsDataframe = pd.DataFrame(groups)
     groupsDataframe.pop('thresholds')
     return groupsDataframe
+
+
+def characterizeSample(sample: pd.DataFrame, dimensions):
+    sampleCharacteristics = np.array([])
+    for dimension in dimensions:
+        dimensionValues = sample[dimension]
+        mode = np.argmax(np.bincount(dimensionValues))
+        median = np.median(dimensionValues)
+        mean = np.mean(dimensionValues)
+        minimum = np.min(dimensionValues)
+        maximum = np.max(dimensionValues)
+        first_quartile = np.percentile(dimensionValues, 25)
+        third_quartile = np.percentile(dimensionValues, 75)
+        variance = np.var(dimensionValues)
+        standard_deviation = np.std(dimensionValues)
+        skewness = sp.skew(dimensionValues)
+        kurtosis_value = sp.kurtosis(dimensionValues)
+        dimensionsChar = np.array([mode, median, mean, minimum, maximum, first_quartile, third_quartile, variance, standard_deviation, skewness, kurtosis_value])
+        sampleCharacteristics = np.append(sampleCharacteristics, dimensionsChar)
+
+    return sampleCharacteristics
+
+
