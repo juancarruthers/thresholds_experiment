@@ -10,3 +10,4 @@ from Filters.SizeFilter import SizeFilter
 from Filters.ForkFilter import ForkFilter
 from Filters.StargazerFilter import StargazerFilter
 from Filters.AgeFilter import AgeFilter
+from Filters.ActivityFilter import ActivityFilter

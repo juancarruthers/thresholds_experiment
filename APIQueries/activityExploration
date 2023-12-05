@@ -1,0 +1,18 @@
+query($owner: String!, $name: String!, $since: GitTimestamp!, $until: GitTimestamp!){
+  repository(owner: $owner, name: $name) {
+
+    defaultBranchRef {
+      target {
+        ... on Commit {
+          history(first: 1, since: $since, until: $until) {
+            edges {
+              node {
+                committedDate
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

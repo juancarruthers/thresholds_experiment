@@ -39,9 +39,10 @@ class Utilities:
             os.mkdir(path)
 
         df = pd.DataFrame(dataset)
-        df.to_csv(path + '/largerFrame.csv', index=False)
-        queryState = pd.DataFrame([{'startSize': startSize, 'sizeInc': sizeInc}])
-        queryState.to_csv(path + "/queryState.csv", index=False)
+        if df.shape[0] > 0:
+            df.to_csv(path + '/largerFrame.csv', index=False)
+            queryState = pd.DataFrame([{'startSize': startSize, 'sizeInc': sizeInc}])
+            queryState.to_csv(path + "/queryState.csv", index=False)
 
     def makeRequest (self, query: str | dict, reqType="POST", url='https://api.github.com/graphql') -> dict:
         tokens = self.readFile("token").split("\n")
@@ -71,8 +72,8 @@ class Utilities:
             if reqType == "POST":
                 response = requests.post(url, json=query, headers=headers, timeout=120).json()
                 condition: bool | list = response.get("errors", False)
-                if condition and condition[0]['type'] == 'NOT_FOUND':
-                    return response, False
+                if condition and 'type' in condition[0]:
+                    if condition[0]['type'] == 'NOT_FOUND': return response, False
 
             else:
                 response = requests.get(url, headers=headers, timeout=120).json()

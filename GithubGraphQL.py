@@ -52,7 +52,6 @@ class GithubGraphQL:
                             repoCount = 0
                             break
 
-                    util.saveCheckPoint(self._startSize, self._sizeInc, self._df_data)
                     repoCount -= repoCountSubQuery
                     hasNextPage = repoCount > 0
                     cursor = None
@@ -77,6 +76,7 @@ class GithubGraphQL:
                             cursor = repositories['pageInfo']['endCursor']
 
                     self._startSize += self._sizeInc
+                    util.saveCheckPoint(self._startSize, self._sizeInc, self._df_data)
 
                 finish = datetime.datetime.now()
                 difference = finish - start
@@ -152,11 +152,11 @@ class GithubGraphQL:
             futures = {executor.submit(self._getRepoDataByName, _, repo) for _, repo in chunk.iterrows()}
             for future in concurrent.futures.as_completed(futures):
                 repositoryProperties, filtersFlag = future.result()
-                if language == "*": languageFlag = True
-                else: languageFlag = repositoryProperties['primaryLanguage'] == language
-                if not filtersFlag and languageFlag:
-                    newDataset.append(repositoryProperties)
-                    print(f'{datetime.datetime.now()} - Added: {repositoryProperties["url"]}')
+
+                if not filtersFlag:
+                    if language == "*" or repositoryProperties['primaryLanguage'] == language:
+                        newDataset.append(repositoryProperties)
+                        print(f'{datetime.datetime.now()} - Added: {repositoryProperties["url"]}')
 
         return newDataset
 
@@ -220,7 +220,7 @@ class GithubGraphQL:
 
 
     def _setFilters(self, thresholds: dict) -> list[GraphqlFilter]:
-        filters = ['keywords', 'totalSize', 'commits', 'closedIssuesCount', 'pullReqCount', 'dateLastActivity', 'contributors']
+        filters = ['keywords', 'totalSize', 'commits', 'closedIssuesCount', 'pullReqCount', 'dateLastActivity', 'contributors', 'activity']
         filtersConfig = []
         for filter in filters:
             filterConfig = GraphqlFilter
@@ -239,6 +239,8 @@ class GithubGraphQL:
                     filterConfig = RecentActivityFilter({filter: thresholds[filter]})
                 if filter == 'contributors':
                     filterConfig = ContributorsFilter({filter: thresholds[filter]})
+                if filter == 'activity':
+                    filterConfig = ActivityFilter({filter: thresholds[filter]})
 
                 filtersConfig.append(filterConfig)
             else:
