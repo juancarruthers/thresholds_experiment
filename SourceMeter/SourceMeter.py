@@ -22,18 +22,9 @@ class SourceMeter:
             stdout = subprocess.run(command, stdout=subprocess.PIPE, universal_newlines=True, check=True, text=True,
                                 shell=True).stdout
         except Exception as error:
-            print(error)
-            self.logAnalysisError(projectName)
-            raise Exception("Analysis execution error")
+            raise Exception("Analysis execution error, Revise log analysis files")
 
 
-    def logAnalysisError(self, name):
-        logFilePath = os.path.abspath(f'{self._resultsDir}/error-log.txt')
-        if not os.path.exists(logFilePath):
-            open(logFilePath, "x")
-
-        with open(logFilePath, "a") as file:
-            file.write(f"{datetime.now()} - Error analyzing {name}\n")
 
     def getResultsDir(self):
         return self._resultsDir
