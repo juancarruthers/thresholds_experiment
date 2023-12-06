@@ -92,12 +92,20 @@ class Utilities:
 
     def deleteFolder(self, folder):
         try:
-            shutil.rmtree(folder)
+            if os.path.exists(folder):
+                shutil.rmtree(folder)
 
         except PermissionError as error:
             if error.errno == 13:
                 os.chmod(error.filename, stat.S_IWUSR | stat.S_IREAD)
                 self.deleteFolder(folder)
+
+    def excludeTestFilesMeasures(self, dataset: pd.DataFrame):
+        dataset = dataset[dataset['LOC'] > 0]
+        dataset = dataset[~dataset['Path'].str.match(r'.*src\\test.*')]
+        dataset = dataset[~dataset['Path'].str.match(r'.*src\\tests.*')]
+
+        return dataset
 
 
 
