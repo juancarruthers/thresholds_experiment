@@ -3,10 +3,10 @@ import numpy as np
 import scipy.stats as sp
 import statsmodels.distributions.empirical_distribution as stMod
 import random as rd
+import SizeThresholds
 from DiversityScore import DiversityScore
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
-from aix360.algorithms.protodash.PDASH import ProtodashExplainer
 
 def createSimpleRandomSample(dataset: pd.DataFrame, numberElements: int) -> pd.DataFrame:
     sample = dataset.sample(numberElements)
@@ -43,21 +43,6 @@ def createKMeansStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], n
 
     return sample
 
-def createProtodashSample(dataset: pd.DataFrame, dimensions: list[str], numberElements: int) -> pd.DataFrame:
-    dimensionsKeys = []
-    for dimension in dimensions:
-        dimKey = dataset.columns.get_loc(dimension)
-        dimensionsKeys.append(dimKey)
-
-    analizedDimensions = dataset.iloc[:, dimensionsKeys].copy()
-
-    numpyDataset = analizedDimensions.to_numpy()
-
-
-
-    explainer = ProtodashExplainer()
-    (W, S, _) = explainer.explain(numpyDataset, numpyDataset, m=numberElements, kernelType='Gaussian')
-    return dataset.iloc[S, :].copy()
 
 
 def createStratifiedSample(dataset: pd.DataFrame, dimensions: list[str], numberElements: int, configuration=[]) -> tuple[pd.DataFrame, list]:
@@ -198,6 +183,43 @@ def generateGroupsOutput(stratifiedSampleGroups: list, sample: pd.DataFrame) -> 
     groupsDataframe = pd.DataFrame(groups)
     groupsDataframe.pop('thresholds')
     return groupsDataframe
+
+def createKMeansSample(frame: pd.DataFrame, sampleSize: int, colName="totalSize"):
+
+    numberOfProj = frame.shape[0]
+    groups = getGroupsKMeans(frame, colName)
+    sample = pd.DataFrame()
+
+    for group in groups:
+        quantity = round((group.shape[0] / numberOfProj) * sampleSize)
+        sample = pd.concat([sample, group.sample(quantity, ignore_index=True)])
+
+    if sampleSize != sample.shape[0]:
+        groupSizes = [group.shape[0] for group in groups]
+        indexOfLargerGroup = groupSizes.index(max(groupSizes))
+        projects = groups[indexOfLargerGroup]
+        if sampleSize < sample.shape[0]:
+            id = sample[sample['id'].isin(projects['id'])].sample(1)['id'].values[0]
+            sample = sample[sample['id'] != id]
+        else:
+            sample = pd.concat([sample, projects[~projects['id'].isin(sample['id'])].sample(1)])
+
+
+    return sample
+
+def getGroupsKMeans(frame: pd.DataFrame, colName="totalSize"):
+    groups: list[pd.DataFrame] = []
+    thresholds = SizeThresholds.getThresholds(frame)
+
+    groups.append(frame[frame[colName] <= thresholds[0]])
+
+    for i in range(1, len(thresholds)):
+        projects = frame.loc[(thresholds[i-1] < frame[colName]) & (thresholds[i] >= frame[colName])]
+        groups.append(projects)
+
+    groups.append(frame[frame[colName] > thresholds[-1]])
+
+    return groups
 
 
 def characterizeSample(sample: pd.DataFrame, dimensions):
