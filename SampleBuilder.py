@@ -207,9 +207,9 @@ def createKMeansSample(frame: pd.DataFrame, sampleSize: int, colName="totalSize"
 
     return sample
 
-def getGroupsKMeans(frame: pd.DataFrame, colName="totalSize"):
+def getGroupsKMeans(frame: pd.DataFrame, colName="totalSize", nClusters=5):
     groups: list[pd.DataFrame] = []
-    thresholds = SizeThresholds.getThresholds(frame)
+    thresholds = SizeThresholds.getThresholds(frame, colName, nClusters)
 
     groups.append(frame[frame[colName] <= thresholds[0]])
 
@@ -241,5 +241,30 @@ def characterizeSample(sample: pd.DataFrame, dimensions):
         sampleCharacteristics = np.append(sampleCharacteristics, dimensionsChar)
 
     return sampleCharacteristics
+
+'''
+    stochastic equality is readily seen to be equivalent to the p÷ = .5
+
+    In the continuous case p+ > .5 clearly implies that population 1 is
+    stochastically larger than population 2, and p+ < .5 implies that population 1 is
+    stochastically smaller than population 2
+
+    Small: 0.56
+    Medium: 0.64
+    Large: 0.71
+
+    Vargha, A., & Delaney, H. D. (2000). A critique and improvement of the CL common language effect size statistics of McGraw and Wong. Journal of Educational and Behavioral Statistics, 25(2), 101-132.
+'''
+def varghaDelaney(a, b, scaled=True):
+    m = len(a)
+    n = len(b)
+    U = sp.rankdata(np.concatenate([a, b]))
+    R1 = U[:m].sum()
+    R2 = U[m:].sum()
+    v = (R1/m - (m+1)/2)/n
+    if scaled:
+        return abs((v-0.5)*2)
+    else:
+        return v
 
 
