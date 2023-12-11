@@ -1,50 +1,39 @@
-import os
+﻿import os
 import datetime
 import numpy as np
 import pandas as pd
+import psutil
 from dateutil.relativedelta import relativedelta
-#import SampleBuilder as SB
+import SampleBuilder as SB
 from GithubGraphQL import GithubGraphQL as GQL
 import scipy.stats as sp
-
+from scipy.spatial.distance import euclidean, cosine
+from Maintenance import Maintenance
+import SizeThresholds as ST
+from SourceMeter.DatasetGenerator import DatasetGenerator
+from SourceMeter.SourceMeter import SourceMeter
 from Utilities import Utilities
 
 
-#from Maintenance import Maintenance
-
-
-
-def createFrame(queryFilter: str, secondFilter: dict, p_itemsPageMainQuery = 30):
+def createFrame():
     today = datetime.date.today()
+    aYearAgo = today - relativedelta(years=1)
+    aMonthAgo = today - relativedelta(months=1)
+
+    QUERY_FILTER = f"is:public, language:java, mirror:false, forks:>=10, stars:>=10, created:<={str(aYearAgo)}"
+    SECOND_FILTER = {'keywords': ['sample', 'tutorial', 'demo', 'conf', 'exam', 'docs', 'benchmark', 'wiki', 'guide'],
+                     'totalSize': 10000, 'commits': 1000,
+                     'closedIssuesCount': 50, 'pullReqCount': 50, 'dateLastActivity': str(aMonthAgo), 'contributors': 3,
+                     'activity': {'since': str(aYearAgo), 'commits': 1}}
+
 
     folderPath = "./datasets/" + str(today.year) + str(today.month) + str(today.day)
     if not (os.path.isdir(folderPath)):
         os.mkdir(folderPath)
 
-    projectRetriever = GQL(queryFilter, secondFilter, folderPath, p_itemsPageMainQuery=p_itemsPageMainQuery)
-    projectRetriever.main()
+    graphql = GQL(QUERY_FILTER, SECOND_FILTER, folderPath)
+    graphql.extractFrame(pd.read_csv('./datasets/longStudy/listProj.csv'))
 
-'''
-    stochastic equality is readily seen to be equivalent to the p÷ = .5
-
-    In the continuous case p+ > .5 clearly implies that population 1 is
-    stochastically larger than population 2, and p+ < .5 implies that population 1 is
-    stochastically smaller than population 2
-
-    Small: 0.56
-    Medium: 0.64
-    Large: 0.71
-
-    Vargha, A., & Delaney, H. D. (2000). A critique and improvement of the CL common language effect size statistics of McGraw and Wong. Journal of Educational and Behavioral Statistics, 25(2), 101-132.
-'''
-def varghaDelaney(a, b):
-    m = len(a)
-    n = len(b)
-    U = sp.rankdata(np.concatenate([a, b]))
-    R1 = U[:m].sum()
-    R2 = U[m:].sum()
-    v = (R1/m - (m+1)/2)/n
-    return v
 
 def representativenessCheck(frame, sample, variables, pvalue) -> bool:
     dScore, mwScore, ksScore = SB.testSampleDiversityRepresentativeness(frame, sample, variables, pvalue)
@@ -57,17 +46,16 @@ def representativenessCheck(frame, sample, variables, pvalue) -> bool:
 def samplingExperiment(frame: pd.DataFrame, sampleStrategy: str, dimensions: list[str], sampleSize: int) -> pd.DataFrame:
 
     sample = pd.DataFrame()
-    if sampleStrategy == 'protodash':
-        sample = SB.createProtodashSample(frame, dimensions, sampleSize)
+    '''
     if sampleStrategy == 'diverse':
         sample = SB.createDiverseSample(frame, dimensions)
     if sampleStrategy == 'stratified':
         sample = SB.createStratifiedSample(frame, dimensions, sampleSize)[0]
+    '''
     if sampleStrategy == 'stratifiedKMeans':
-        sample = SB.createKMeansStratifiedSample(frame, dimensions, sampleSize) #7 clusters star experiment
-    if sampleStrategy == 'simpleRandom':
+        sample = SB.createKMeansSample(frame, sampleSize, dimensions[0])#sample = SB.createKMeansStratifiedSample(frame, dimensions, sampleSize) #7 clusters star experiment
+    elif sampleStrategy == 'simpleRandom':
         sample = SB.createSimpleRandomSample(frame, sampleSize)
-
 
     return sample
 
@@ -76,61 +64,136 @@ def maintenanceExperiment(newFrame: pd.DataFrame, sample: pd.DataFrame, maintena
     maintainer = Maintenance(dimensions)
     sampleMaintained = pd.DataFrame()
 
-    if maintenanceStrategy == 'DirectReplacementKM':
-        sampleMaintained = maintainer.updateSample(newFrame, sample, 'DR', 'kmeans', sampleSize, **{'nClusters': 6})[0]
-
+    if maintenanceStrategy == 'DirectReplacement':
+        sampleMaintained = maintainer.updateSample(newFrame, sample, 'DR', sampleSize, **{'nClusters': 6})[0]
     elif maintenanceStrategy == 'DynamicThresholdsKM':
-        sampleMaintained = maintainer.updateSample(newFrame, sample, 'DT', 'kmeans', sampleSize, **{'nClusters': 6})[0]
-    elif maintenanceStrategy == 'UpdateIfAvailable':
-        projectsUpdated = newFrame[newFrame['id'].isin(sample['id'])]
-        projectsNotUpdated = sample[~sample['id'].isin(newFrame['id'])]
-        sampleMaintained = pd.concat([projectsUpdated, projectsNotUpdated])
+        sampleMaintained = maintainer.updateSample(newFrame, sample, 'DT', sampleSize, **{'nClusters': 6})[0]
     elif maintenanceStrategy == 'Resample':
-        sampleMaintained = SB.createKMeansStratifiedSample(newFrame, dimensions, sampleSize)
-
-
-    if maintenanceStrategy == 'No':
-        sampleMaintained = sample.copy()
+        sampleMaintained = SB.createKMeansSample(newFrame, sampleSize, dimensions[0])
 
     return sampleMaintained
-def experiment(frame: pd.DataFrame, experimentType: str, strategies: list[str], dimensions: list[str], samplesPath: str, sampleSize = 300, repetitions = 360):
+def experiment(frame: pd.DataFrame, experimentType: str, strategies: list[str], samplesPath: str, dimensions=['totalSize'], sampleSize = 112, repetitions = 360):
+    measureData = pd.DataFrame(columns=['COS', 'EUC', 'EMD', 'VD'])
 
-    emdDataFrame = pd.DataFrame(columns=dimensions)
     for strategy in strategies:
+        if not os.path.exists(f"{samplesPath}/{strategy}"):
+            os.mkdir(f"{samplesPath}/{strategy}")
         for i in range(repetitions):
             sample = pd.DataFrame()
             if experimentType == 'sampling':
                 sample = samplingExperiment(frame, strategy, dimensions, sampleSize)
-                sample.to_csv(f"{samplesPath}{strategy}/s{i}.csv", index=False)
+                sample.to_csv(f"{samplesPath}/{strategy}/s{i}.csv", index=False)
             elif experimentType == 'maintenance':
-                oldSample = pd.read_csv(f'./datasets/samMainStudy/samples/stratifiedKMeans/s{i}.csv')
+                oldSample = pd.read_csv(f'./datasets/caseStudy/qualitas/sample.csv')
                 sample = maintenanceExperiment(frame, oldSample, strategy, dimensions, sampleSize)
-                sample.to_csv(f"{samplesPath}{strategy}/s{i}.csv", index=False)
+                sample.to_csv(f"{samplesPath}/{strategy}/s{i}.csv", index=False)
 
             print(f'{strategy} Muestra Nº {i}')
-            # compute the Earth Mover's Distance (EMD) between the two distributions
-            emd = []
-            for dimension in dimensions:
-                wassDistance = sp.wasserstein_distance(frame[dimension], sample[dimension])
-                emd.append(wassDistance)
 
-            emdDataFrameAux = pd.DataFrame(emd).T
-            emdDataFrameAux.columns = dimensions
-            emdDataFrame = pd.concat([emdDataFrame, emdDataFrameAux])
+            sampleCharacteristics = SB.characterizeSample(sample, dimensions)
+            frameCharacteristics = SB.characterizeSample(frame, dimensions)
 
-        emdDataFrame.to_csv(f'{samplesPath}{strategy}.csv', index=False)
-        emdDataFrame = pd.DataFrame()
+            cosineDistance = cosine(sampleCharacteristics, frameCharacteristics)
+            euclideanDistance = euclidean(sampleCharacteristics, frameCharacteristics)
+            wassDistance = sp.wasserstein_distance(frame[dimensions[0]], sample[dimensions[0]])
+            VGEffectSize = SB.varghaDelaney(frame[dimensions[0]], sample[dimensions[0]])
+
+            row = pd.DataFrame({'COS': [cosineDistance], 'EUC': [euclideanDistance], 'EMD': [wassDistance], 'VD': [VGEffectSize]})
+            measureData = pd.concat([measureData, row])
+
+        measureData.to_csv(f'{samplesPath}/{strategy}.csv', index=False)
+        measureData = pd.DataFrame()
+
+def generateDataset(frame: pd.DataFrame, targetPath: str, dimensions=['totalSize'], type='download'):
+
+    start = datetime.datetime.now()
+
+    sample = pd.read_csv(f'{targetPath}/sample.csv')
+    maintainer = Maintenance(dimensions)
+
+    analyzer = SourceMeter('./SourceMeter/SMResults', './SourceMeter/tool/Java/AnalyzerJava.exe', './SourceMeter/repos')
+    generator = DatasetGenerator(analyzer, './SourceMeter/repos')
+    if type == "download":
+        classData, methodData, packageData, remainingOr = generator.generateDataset(sample)
+    else:
+        classData, methodData, packageData, remainingOr = generator.generateQualitasMetrics(sample)
+
+    classData.to_csv(f'{targetPath}/class.csv', index=False)
+    methodData.to_csv(f'{targetPath}/method.csv', index=False)
+    packageData.to_csv(f'{targetPath}/package.csv', index=False)
+
+    classData, methodData, packageData, remainingOr = generateDatasetRemainings(remainingOr, classData, methodData, packageData, targetPath)
+
+    if type == 'download':
+        i = 0
+        remainingOr = remainingOr.reset_index(drop=True)
+        remaining = remainingOr.copy()
+        newSample = sample[~sample['id'].isin(remaining['id'])]
+
+        while remaining.shape[0] > 0:
+            print(f'\n\n-------> Iteration Number {i+1} - Updating {remaining.shape[0]} projects\n\n')
+            updates = maintainer.directReplacement(sample, frame, remainingOr, 0)
+            updates = updates.reset_index(drop=True)
+            updates = updates[updates.index.isin(remaining.index)]
+
+            classData, methodData, packageData, remaining = generateDatasetRemainings(updates, classData, methodData, packageData, targetPath)
+            frame = frame[~frame['id'].isin(remaining['id'])]
+
+            replacements = updates[~updates['id'].isin(remaining['id'])]
+            newSample = pd.concat([newSample, replacements])
+            i += 1
+
+            if remaining.shape[0] == 0:
+                util = Utilities()
+                classData = util.excludeTestFilesMeasures(classData)
+                methodData = util.excludeTestFilesMeasures(methodData)
+                outliers = ST.getOutliers(methodData, ['McCC', 'LOC'])
+                classData = classData[~classData['Repository'].isin(outliers)]
+                methodData = methodData[~methodData['Repository'].isin(outliers)]
+                packageData = packageData[~packageData['Repository'].isin(outliers)]
+
+                frame = frame[~frame['id'].isin(remainingOr['id'])]
+
+                remainingOr = newSample[newSample['url'].isin(outliers)]
+                sample = newSample.copy()
+
+                i = 0
+                remainingOr = remainingOr.reset_index(drop=True)
+                remaining = remainingOr.copy()
+                newSample = sample[~sample['id'].isin(remaining['id'])]
+
+
+        classData.to_csv(f'{targetPath}/class.csv', index=False)
+        methodData.to_csv(f'{targetPath}/method.csv', index=False)
+        packageData.to_csv(f'{targetPath}/package.csv', index=False)
+        newSample.to_csv(f'{targetPath}/sample2.csv', index=False)
+        frame.to_csv(f'{targetPath}/frame.csv', index=False)
+
+        finish = datetime.datetime.now()
+        print('Start:', start, '- Finish:', finish, " -  Time:", finish - start)
+
+
+def generateDatasetRemainings(remainings, classData, methodData, packageData, targetPath):
+
+    analyzer = SourceMeter('./SourceMeter/SMResults', './SourceMeter/tool/Java/AnalyzerJava.exe', './SourceMeter/repos', 6)
+    generator = DatasetGenerator(analyzer, './SourceMeter/repos')
+    classRem, methodRem, packageRem, remaining = generator.generateDataset(remainings, 1)
+
+
+    if classRem.shape[0] > 0:
+        classData = pd.concat([classData, classRem])
+        methodData = pd.concat([methodData, methodRem])
+        packageData = pd.concat([packageData, packageRem])
+        classData.to_csv(f'{targetPath}/class.csv', index=False)
+        methodData.to_csv(f'{targetPath}/method.csv', index=False)
+        packageData.to_csv(f'{targetPath}/package.csv', index=False)
+
+    return classData, methodData, packageData, remaining
 
 
 if __name__ == '__main__':
 
-
-    util = Utilities()
-    data = pd.read_csv('./datasets/samMainStudy/samples/stratifiedKMeans/s0.csv')
-    dataset = util.generateDataset(data, "../sm/SM/repos")
-
-    dataset.to_csv('./datasets/caseStudy/downloadTestSet/metrics.csv', index=False)
-
+    generateDataset(pd.read_csv('./datasets/samMainStudy/20231201.csv'), './datasets/caseStudy/sampleU3')
 
 
 
