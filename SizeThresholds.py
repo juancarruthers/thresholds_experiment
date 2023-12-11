@@ -3,16 +3,16 @@ import pandas as pd
 from sklearn.cluster import KMeans
 
 
-def getThresholds(data, dimension='totalSize', clusters=5):
+def getThresholds(data, dimension='totalSize', nClusters=5):
 
     groups = []
     outlierBoundValue = upperBound(data[dimension])
     dataWithoutOutliers = data[data[dimension] < outlierBoundValue]
     vector = dataWithoutOutliers[dimension].values.reshape(-1, 1)
-    kmeans = KMeans(n_clusters=clusters, init='k-means++', n_init=10)
+    kmeans = KMeans(n_clusters=nClusters, init='k-means++', n_init=10)
     kmeans.fit(vector)
 
-    for id in range(clusters):
+    for id in range(nClusters):
         cluster: np.ndarray = np.where(kmeans.labels_ == id)[0]
         elementsInTheCluster = vector[cluster, :].reshape(1, -1)[0]
         groups.append(max(elementsInTheCluster))
