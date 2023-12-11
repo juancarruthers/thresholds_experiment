@@ -33,7 +33,7 @@ class DatasetGenerator:
         step = 10
 
         for i in range(0, repoQuantity, step):
-            set = dataset[dataset.index.isin(range(i, i + step))]
+            set = dataset.iloc[i: i + step, :]
             executor = concurrent.futures.ThreadPoolExecutor(max_workers=threads)
             futures = {executor.submit(self._downloadRepositoryData, value) for key, value in set.iterrows()}
 
