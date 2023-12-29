@@ -29,14 +29,13 @@ class Maintenance:
         if sampleSize == 0:
             sampleSize = SB.sampleSize(frame.shape[0])
 
-        nClusters = args['nClusters']
         if method == 'DR':
             projectsToUpdate = sample[~sample['id'].isin(frame['id'])]
             replacements = self.directReplacement(sampleUpdated, frame, projectsToUpdate)
             sampleUpdated = pd.concat([sampleUpdated, replacements])
 
         elif method == 'DT':
-            sampleUpdated = self.kMeansThresholds(frame, sampleUpdated, sampleExpectedSize, 'totalSize')
+            sampleUpdated = self.kMeansThresholds(frame, sampleUpdated, sampleExpectedSize, 'totalSize', **args)
             #sampleUpdated = self._naggClustering(frame, frameWithoutUpdatedSample, sampleUpdated, sampleSize, method)
 
         '''

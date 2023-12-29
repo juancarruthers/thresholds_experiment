@@ -65,15 +65,15 @@ def maintenanceExperiment(newFrame: pd.DataFrame, sample: pd.DataFrame, maintena
     sampleMaintained = pd.DataFrame()
 
     if maintenanceStrategy == 'DirectReplacement':
-        sampleMaintained = maintainer.updateSample(newFrame, sample, 'DR', sampleSize, **{'nClusters': 6})[0]
+        sampleMaintained, _, _ = maintainer.updateSample(newFrame, sample, 'DR', sampleSize, **{'nClusters': 6})
     elif maintenanceStrategy == 'DynamicThresholdsKM':
-        sampleMaintained = maintainer.updateSample(newFrame, sample, 'DT', sampleSize, **{'nClusters': 6})[0]
+        sampleMaintained, _, _ = maintainer.updateSample(newFrame, sample, 'DT', sampleSize, **{'nClusters': 6})
     elif maintenanceStrategy == 'Resample':
         sampleMaintained = SB.createKMeansSample(newFrame, sampleSize, dimensions[0])
 
     return sampleMaintained
 def experiment(frame: pd.DataFrame, experimentType: str, strategies: list[str], samplesPath: str, dimensions=['totalSize'], sampleSize = 112, repetitions = 360):
-    measureData = pd.DataFrame(columns=['COS', 'EUC', 'EMD', 'VD'])
+    measureData = pd.DataFrame(columns=['COS', 'VD'])
 
     for strategy in strategies:
         if not os.path.exists(f"{samplesPath}/{strategy}"):
@@ -94,11 +94,9 @@ def experiment(frame: pd.DataFrame, experimentType: str, strategies: list[str], 
             frameCharacteristics = SB.characterizeSample(frame, dimensions)
 
             cosineDistance = cosine(sampleCharacteristics, frameCharacteristics)
-            euclideanDistance = euclidean(sampleCharacteristics, frameCharacteristics)
-            wassDistance = sp.wasserstein_distance(frame[dimensions[0]], sample[dimensions[0]])
             VGEffectSize = SB.varghaDelaney(frame[dimensions[0]], sample[dimensions[0]])
 
-            row = pd.DataFrame({'COS': [cosineDistance], 'EUC': [euclideanDistance], 'EMD': [wassDistance], 'VD': [VGEffectSize]})
+            row = pd.DataFrame({'COS': [cosineDistance], 'VD': [VGEffectSize]})
             measureData = pd.concat([measureData, row])
 
         measureData.to_csv(f'{samplesPath}/{strategy}.csv', index=False)
@@ -122,6 +120,7 @@ def generateDataset(frame: pd.DataFrame, targetPath: str, dimensions=['totalSize
     methodData.to_csv(f'{targetPath}/method.csv', index=False)
     packageData.to_csv(f'{targetPath}/package.csv', index=False)
 
+
     classData, methodData, packageData, remainingOr = generateDatasetRemainings(remainingOr, classData, methodData, packageData, targetPath)
 
     if type == 'download':
@@ -132,7 +131,7 @@ def generateDataset(frame: pd.DataFrame, targetPath: str, dimensions=['totalSize
 
         while remaining.shape[0] > 0:
             print(f'\n\n-------> Iteration Number {i+1} - Updating {remaining.shape[0]} projects\n\n')
-            updates = maintainer.directReplacement(sample, frame, remainingOr, 0)
+            updates = maintainer.directReplacement(sample, frame, remainingOr)
             updates = updates.reset_index(drop=True)
             updates = updates[updates.index.isin(remaining.index)]
 
@@ -142,7 +141,7 @@ def generateDataset(frame: pd.DataFrame, targetPath: str, dimensions=['totalSize
             replacements = updates[~updates['id'].isin(remaining['id'])]
             newSample = pd.concat([newSample, replacements])
             i += 1
-
+            '''
             if remaining.shape[0] == 0:
                 util = Utilities()
                 classData = util.excludeTestFilesMeasures(classData)
@@ -161,6 +160,7 @@ def generateDataset(frame: pd.DataFrame, targetPath: str, dimensions=['totalSize
                 remainingOr = remainingOr.reset_index(drop=True)
                 remaining = remainingOr.copy()
                 newSample = sample[~sample['id'].isin(remaining['id'])]
+            '''
 
 
         classData.to_csv(f'{targetPath}/class.csv', index=False)
@@ -190,10 +190,41 @@ def generateDatasetRemainings(remainings, classData, methodData, packageData, ta
 
     return classData, methodData, packageData, remaining
 
+def collectBestSample(frame, colName, iterations, approach, *args):
+    bestSample = pd.DataFrame()
+    cos1 = 0
+    for iteration in range(iterations):
+
+        sample: pd.DataFrame = approach(*args)
+        sampleCharacteristics = SB.characterizeSample(sample, [colName])
+        frameCharacteristics = SB.characterizeSample(frame, [colName])
+
+        if iteration == 0:
+            bestSample = sample.copy()
+            cos1 = cosine(sampleCharacteristics, frameCharacteristics)
+        else:
+
+            cos2 = cosine(sampleCharacteristics, frameCharacteristics)
+            if cos1 > cos2:
+                bestSample = sample
+                cos1 = cos2
+        print(cos1)
+    return bestSample
+
 
 if __name__ == '__main__':
 
-    generateDataset(pd.read_csv('./datasets/samMainStudy/20231201.csv'), './datasets/caseStudy/sampleU3')
+    #generateDataset(pd.read_csv('./datasets/samMainStudy/20231201.csv'), './datasets/caseStudy/simpleRandom')
+
+
+    maintainer = Maintenance(['totalSize'])
+    frame = pd.read_csv('./datasets/samMainStudy/20231201.csv')
+    sample = pd.read_csv(f'./datasets/caseStudy/qualitas/sample.csv')
+    #sample = collectBestSample(frame, 'totalSize', 360, SB.createKMeansSample, frame, 112)
+    sampleMaintained, _, _ = maintainer.updateSample(frame, pd.read_csv(f'./datasets/caseStudy/qualitas/sample.csv'), 'DT', 112, **{'nClusters': 5})
+
+    sampleMaintained.to_csv('./datasets/caseStudy/sampleU/sample.csv', index=False)
+
 
 
 
