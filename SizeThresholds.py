@@ -21,13 +21,6 @@ def getThresholds(data, dimension='totalSize', nClusters=5):
     return groups
 
 
-# MIN-MAX NORMALIZATION, paper "Qualitative Clustering of Software Repositories Based on Software Metrics"
-def dataNormalization(data: np.ndarray):
-    minVal = min(data)
-    maxVal = max(data)
-
-    return (data - minVal) / (maxVal - minVal)
-
 # ALVES ET AL. OUTLIER DETECTION
 def upperBound(data: np.ndarray):
     Q1 = np.percentile(data, 25)

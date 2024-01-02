@@ -12,7 +12,7 @@ from Maintenance import Maintenance
 import SizeThresholds as ST
 from SourceMeter.DatasetGenerator import DatasetGenerator
 from SourceMeter.SourceMeter import SourceMeter
-from Utilities import Utilities
+
 
 
 def createFrame():
@@ -21,7 +21,7 @@ def createFrame():
     aMonthAgo = today - relativedelta(months=1)
 
     QUERY_FILTER = f"is:public, language:java, mirror:false, forks:>=10, stars:>=10, created:<={str(aYearAgo)}"
-    SECOND_FILTER = {'keywords': ['sample', 'tutorial', 'demo', 'conf', 'exam', 'docs', 'benchmark', 'wiki', 'guide'],
+    SECOND_FILTER = {'keywords': ['sample', 'tutorial', 'demo', 'conf', 'exam', 'docs', 'benchmark', 'wiki', 'guide', 'template'],
                      'totalSize': 10000, 'commits': 1000,
                      'closedIssuesCount': 50, 'pullReqCount': 50, 'dateLastActivity': str(aMonthAgo), 'contributors': 3,
                      'activity': {'since': str(aYearAgo), 'commits': 1}}
@@ -32,75 +32,12 @@ def createFrame():
         os.mkdir(folderPath)
 
     graphql = GQL(QUERY_FILTER, SECOND_FILTER, folderPath)
-    graphql.extractFrame(pd.read_csv('./datasets/longStudy/listProj.csv'))
+    frame = graphql.extractFrame(pd.read_csv('./datasets/longStudy/listProj.csv'))
+
+    return frame
 
 
-def representativenessCheck(frame, sample, variables, pvalue) -> bool:
-    dScore, mwScore, ksScore = SB.testSampleDiversityRepresentativeness(frame, sample, variables, pvalue)
-    notRepresentative = False
-    if (len(mwScore[1]) > 0) or (len(ksScore[1]) > 0):
-        notRepresentative = True
 
-    return notRepresentative
-
-def samplingExperiment(frame: pd.DataFrame, sampleStrategy: str, dimensions: list[str], sampleSize: int) -> pd.DataFrame:
-
-    sample = pd.DataFrame()
-    '''
-    if sampleStrategy == 'diverse':
-        sample = SB.createDiverseSample(frame, dimensions)
-    if sampleStrategy == 'stratified':
-        sample = SB.createStratifiedSample(frame, dimensions, sampleSize)[0]
-    '''
-    if sampleStrategy == 'stratifiedKMeans':
-        sample = SB.createKMeansSample(frame, sampleSize, dimensions[0])#sample = SB.createKMeansStratifiedSample(frame, dimensions, sampleSize) #7 clusters star experiment
-    elif sampleStrategy == 'simpleRandom':
-        sample = SB.createSimpleRandomSample(frame, sampleSize)
-
-    return sample
-
-
-def maintenanceExperiment(newFrame: pd.DataFrame, sample: pd.DataFrame, maintenanceStrategy: str, dimensions: list[str], sampleSize: int) -> pd.DataFrame:
-    maintainer = Maintenance(dimensions)
-    sampleMaintained = pd.DataFrame()
-
-    if maintenanceStrategy == 'DirectReplacement':
-        sampleMaintained, _, _ = maintainer.updateSample(newFrame, sample, 'DR', sampleSize, **{'nClusters': 6})
-    elif maintenanceStrategy == 'DynamicThresholdsKM':
-        sampleMaintained, _, _ = maintainer.updateSample(newFrame, sample, 'DT', sampleSize, **{'nClusters': 6})
-    elif maintenanceStrategy == 'Resample':
-        sampleMaintained = SB.createKMeansSample(newFrame, sampleSize, dimensions[0])
-
-    return sampleMaintained
-def experiment(frame: pd.DataFrame, experimentType: str, strategies: list[str], samplesPath: str, dimensions=['totalSize'], sampleSize = 112, repetitions = 360):
-    measureData = pd.DataFrame(columns=['COS', 'VD'])
-
-    for strategy in strategies:
-        if not os.path.exists(f"{samplesPath}/{strategy}"):
-            os.mkdir(f"{samplesPath}/{strategy}")
-        for i in range(repetitions):
-            sample = pd.DataFrame()
-            if experimentType == 'sampling':
-                sample = samplingExperiment(frame, strategy, dimensions, sampleSize)
-                sample.to_csv(f"{samplesPath}/{strategy}/s{i}.csv", index=False)
-            elif experimentType == 'maintenance':
-                oldSample = pd.read_csv(f'./datasets/caseStudy/qualitas/sample.csv')
-                sample = maintenanceExperiment(frame, oldSample, strategy, dimensions, sampleSize)
-                sample.to_csv(f"{samplesPath}/{strategy}/s{i}.csv", index=False)
-
-            print(f'{strategy} Muestra Nº {i}')
-
-            sampleCharacteristics = SB.characterizeSample(sample, dimensions)
-            frameCharacteristics = SB.characterizeSample(frame, dimensions)
-
-            cosineDistance = cosine(sampleCharacteristics, frameCharacteristics)
-            VGEffectSize = SB.varghaDelaney(frame[dimensions[0]], sample[dimensions[0]])
-
-            row = pd.DataFrame({'COS': [cosineDistance], 'VD': [VGEffectSize]})
-            measureData = pd.concat([measureData, row])
-
-        measureData.to_csv(f'{samplesPath}/{strategy}.csv', index=False)
-        measureData = pd.DataFrame()
 
 def generateDataset(frame: pd.DataFrame, targetPath: str, dimensions=['totalSize'], type='download'):
 
@@ -163,7 +100,7 @@ def generateDataset(frame: pd.DataFrame, targetPath: str, dimensions=['totalSize
             '''
 
 
-        classData.to_csv(f'{targetPath}/class.csv', index=False)
+        classData.to_csv(f'{targetPath}/class2.csv', index=False)
         methodData.to_csv(f'{targetPath}/method.csv', index=False)
         packageData.to_csv(f'{targetPath}/package.csv', index=False)
         newSample.to_csv(f'{targetPath}/sample2.csv', index=False)
@@ -190,58 +127,23 @@ def generateDatasetRemainings(remainings, classData, methodData, packageData, ta
 
     return classData, methodData, packageData, remaining
 
-def collectBestSample(frame, colName, iterations, approach, *args):
-    bestSample = pd.DataFrame()
-    cos1 = 0
-    for iteration in range(iterations):
-
-        sample: pd.DataFrame = approach(*args)
-        sampleCharacteristics = SB.characterizeSample(sample, [colName])
-        frameCharacteristics = SB.characterizeSample(frame, [colName])
-
-        if iteration == 0:
-            bestSample = sample.copy()
-            cos1 = cosine(sampleCharacteristics, frameCharacteristics)
-        else:
-
-            cos2 = cosine(sampleCharacteristics, frameCharacteristics)
-            if cos1 > cos2:
-                bestSample = sample
-                cos1 = cos2
-        print(cos1)
-    return bestSample
-
 
 if __name__ == '__main__':
 
-    #generateDataset(pd.read_csv('./datasets/samMainStudy/20231201.csv'), './datasets/caseStudy/simpleRandom')
-
+    frame = createFrame()
 
     maintainer = Maintenance(['totalSize'])
-    frame = pd.read_csv('./datasets/samMainStudy/20231201.csv')
-    sample = pd.read_csv(f'./datasets/caseStudy/qualitas/sample.csv')
-    #sample = collectBestSample(frame, 'totalSize', 360, SB.createKMeansSample, frame, 112)
-    sampleMaintained, _, _ = maintainer.updateSample(frame, pd.read_csv(f'./datasets/caseStudy/qualitas/sample.csv'), 'DT', 112, **{'nClusters': 5})
 
-    sampleMaintained.to_csv('./datasets/caseStudy/sampleU/sample.csv', index=False)
+    qualitas = pd.read_csv(f'./datasets/caseStudy/qualitas/sample.csv')
 
+    qualitasUpdated, _, _ = maintainer.updateSample(frame, qualitas, 'DT', 112, **{'nClusters': 5})
 
+    qualitasUpdated.to_csv('./datasets/caseStudy/qualitasUpdated/sample.csv', index=False)
 
+    generateDataset(frame, './datasets/caseStudy/qualitasUpdated')
 
+    sampleUpdated = SB.createKMeansSample(frame, 112)
 
+    sampleUpdated.to_csv('./datasets/caseStudy/currentSample/sample.csv', index=False)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    generateDataset(frame, './datasets/caseStudy/currentSample')
