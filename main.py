@@ -12,7 +12,7 @@ from Maintenance import Maintenance
 import SizeThresholds as ST
 from SourceMeter.DatasetGenerator import DatasetGenerator
 from SourceMeter.SourceMeter import SourceMeter
-
+from Utilities import Utilities
 
 
 def createFrame():
@@ -57,7 +57,6 @@ def generateDataset(frame: pd.DataFrame, targetPath: str, dimensions=['totalSize
     methodData.to_csv(f'{targetPath}/method.csv', index=False)
     packageData.to_csv(f'{targetPath}/package.csv', index=False)
 
-
     classData, methodData, packageData, remainingOr = generateDatasetRemainings(remainingOr, classData, methodData, packageData, targetPath)
 
     if type == 'download':
@@ -83,7 +82,7 @@ def generateDataset(frame: pd.DataFrame, targetPath: str, dimensions=['totalSize
                 util = Utilities()
                 classData = util.excludeTestFilesMeasures(classData)
                 methodData = util.excludeTestFilesMeasures(methodData)
-                outliers = ST.getOutliers(methodData, ['McCC', 'LOC'])
+                outliers = ST.getOutliers(methodData, ['McCC'])
                 classData = classData[~classData['Repository'].isin(outliers)]
                 methodData = methodData[~methodData['Repository'].isin(outliers)]
                 packageData = packageData[~packageData['Repository'].isin(outliers)]
@@ -97,14 +96,14 @@ def generateDataset(frame: pd.DataFrame, targetPath: str, dimensions=['totalSize
                 remainingOr = remainingOr.reset_index(drop=True)
                 remaining = remainingOr.copy()
                 newSample = sample[~sample['id'].isin(remaining['id'])]
+
             '''
 
-
-        classData.to_csv(f'{targetPath}/class2.csv', index=False)
+        classData.to_csv(f'{targetPath}/class.csv', index=False)
         methodData.to_csv(f'{targetPath}/method.csv', index=False)
         packageData.to_csv(f'{targetPath}/package.csv', index=False)
-        newSample.to_csv(f'{targetPath}/sample2.csv', index=False)
-        frame.to_csv(f'{targetPath}/frame.csv', index=False)
+        newSample.to_csv(f'{targetPath}/newSample.csv', index=False)
+        frame.to_csv(f'{targetPath}/frameWithoutRem.csv', index=False)
 
         finish = datetime.datetime.now()
         print('Start:', start, '- Finish:', finish, " -  Time:", finish - start)
@@ -127,23 +126,76 @@ def generateDatasetRemainings(remainings, classData, methodData, packageData, ta
 
     return classData, methodData, packageData, remaining
 
+def replaceOutliers(frame: pd.DataFrame, targetPath: str, toReplace: pd.DataFrame, dimensions=['totalSize']):
+    start = datetime.datetime.now()
+
+    sample = pd.read_csv(f'{targetPath}/sample.csv')
+    maintainer = Maintenance(dimensions)
+
+    classData = pd.read_csv(f'{targetPath}/class.csv')
+    methodData = pd.read_csv(f'{targetPath}/method.csv')
+    packageData = pd.read_csv(f'{targetPath}/package.csv')
+    remainingOr = sample[sample['url'].isin(toReplace)]
+    frame = frame[~frame['id'].isin(toReplace)]
+
+    classData = classData[~classData['Repository'].isin(remainingOr['url'])]
+    methodData = methodData[~methodData['Repository'].isin(remainingOr['url'])]
+    packageData = packageData[~packageData['Repository'].isin(remainingOr['url'])]
+
+    i = 0
+    remainingOr = remainingOr.reset_index(drop=True)
+    remaining = remainingOr.copy()
+    newSample = sample[~sample['id'].isin(remaining['id'])]
+
+    while remaining.shape[0] > 0:
+        print(f'\n\n-------> Iteration Number {i + 1} - Updating {remaining.shape[0]} projects\n\n')
+        updates = maintainer.directReplacement(sample, frame, remainingOr)
+        updates = updates.reset_index(drop=True)
+        updates = updates[updates.index.isin(remaining.index)]
+
+        classData, methodData, packageData, remaining = generateDatasetRemainings(updates, classData, methodData,
+                                                                                  packageData, targetPath)
+        frame = frame[~frame['id'].isin(remaining['id'])]
+
+        replacements = updates[~updates['id'].isin(remaining['id'])]
+        newSample = pd.concat([newSample, replacements])
+        i += 1
+
+    classData.to_csv(f'{targetPath}/class.csv', index=False)
+    methodData.to_csv(f'{targetPath}/method.csv', index=False)
+    packageData.to_csv(f'{targetPath}/package.csv', index=False)
+    newSample.to_csv(f'{targetPath}/sample2.csv', index=False)
+    frame.to_csv(f'{targetPath}/frame.csv', index=False)
+
+    finish = datetime.datetime.now()
+    print(f'Start: {start} - Finish: {finish} -  Time:{finish - start}\n\n')
+
+
 
 if __name__ == '__main__':
 
+    CURRENT_SAMPLE_PATH = './datasets/caseStudy/currentSample'
+
+    QUALITAS_PATH = './datasets/caseStudy/qualitas'
+
+    QUALITAS_UPDATED_PATH = './datasets/caseStudy/qualitasUpdated'
+
     frame = createFrame()
+
+    frame.to_csv('./datasets/caseStudy/frame.csv', index=False)
 
     maintainer = Maintenance(['totalSize'])
 
-    qualitas = pd.read_csv(f'./datasets/caseStudy/qualitas/sample.csv')
+    qualitas = pd.read_csv(f'{QUALITAS_PATH}/sample.csv')
 
     qualitasUpdated, _, _ = maintainer.updateSample(frame, qualitas, 'DT', 112, **{'nClusters': 5})
 
-    qualitasUpdated.to_csv('./datasets/caseStudy/qualitasUpdated/sample.csv', index=False)
+    qualitasUpdated.to_csv(f'{QUALITAS_UPDATED_PATH}/sample.csv', index=False)
 
-    generateDataset(frame, './datasets/caseStudy/qualitasUpdated')
+    generateDataset(frame, QUALITAS_UPDATED_PATH)
 
     sampleUpdated = SB.createKMeansSample(frame, 112)
 
-    sampleUpdated.to_csv('./datasets/caseStudy/currentSample/sample.csv', index=False)
+    sampleUpdated.to_csv(f'{CURRENT_SAMPLE_PATH}/sample.csv', index=False)
 
-    generateDataset(frame, './datasets/caseStudy/currentSample')
+    generateDataset(frame, CURRENT_SAMPLE_PATH)
