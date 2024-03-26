@@ -27,6 +27,7 @@ class GithubGraphQL:
             start = datetime.datetime.now()
             repoCountQuery = {'query': self._repoCountQueryFile, 'variables': {'query': self._queryVar + ">=" + str(self._startSize)}}
             repoCount = util.makeRequest(repoCountQuery)['data']['search']['repositoryCount']
+            totalRepos = repoCount
 
             if repoCount > 0:
 
@@ -85,6 +86,7 @@ class GithubGraphQL:
                 dataset.to_csv(self._folderPath + "/frame.csv", index=False)
                 if (os.path.isdir('./.backup')):
                     shutil.rmtree('./.backup')
+                print(f"\nTotal number of repositories retrieved in the: {totalRepos}")
                 return dataset
         except KeyboardInterrupt:
             self.quit = True
@@ -92,15 +94,15 @@ class GithubGraphQL:
     def extractFrame(self, listRepo:pd.DataFrame, language='Java'):
         try:
             frame = self._exploreRepos()
-            listRepo = listRepo[~listRepo['url'].isin(frame['url'])]
+            #listRepo = listRepo[~listRepo['url'].isin(frame['url'])]
 
-            newDataset = self._getRepoDataByURL(listRepo, language)
+            #newDataset = self._getRepoDataByURL(listRepo, language)
 
-            updatedRepos = pd.DataFrame(newDataset)
-            frame = pd.concat([frame, updatedRepos])
-            print(f"Number of projects in the dataset: {frame.shape[0]}")
+            #updatedRepos = pd.DataFrame(newDataset)
+            #frame = pd.concat([frame, updatedRepos])
+
             frame = frame.drop_duplicates(subset=['id'])
-            print(f"Without duplicates: {frame.shape[0]}")
+            print(f"Number of projects after filtering: {frame.shape[0]}")
             frame.to_csv(self._folderPath + "/frameUpdated.csv", index=False)
 
             return frame
