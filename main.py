@@ -39,27 +39,29 @@ def createFrame():
 
 
 
-def generateDataset(frame: pd.DataFrame, targetPath: str, dimensions=['totalSize'], type='download'):
+def generateDataset(frame: pd.DataFrame, targetPath: str, toolPath: str, reposPath: str, dimensions=['totalSize'], type='download'):
 
     start = datetime.datetime.now()
 
-    sample = pd.read_csv(f'{targetPath}/sample.csv')
-    maintainer = Maintenance(dimensions)
-
-    analyzer = SourceMeter('./SourceMeter/SMResults', './SourceMeter/tool/Java/AnalyzerJava.exe', './SourceMeter/repos')
-    generator = DatasetGenerator(analyzer, './SourceMeter/repos')
+    analyzer = SourceMeter(f'{toolPath}/SMResults', f'{toolPath}/tool/Java/AnalyzerJava.exe', reposPath)
+    generator = DatasetGenerator(analyzer, reposPath)
     if type == "download":
+        sample = pd.read_csv(f'{targetPath}/sample.csv')
         classData, methodData, packageData, remainingOr = generator.generateDataset(sample)
     else:
-        classData, methodData, packageData, remainingOr = generator.generateQualitasMetrics(sample)
+        classData, methodData, packageData, remainingOr = generator.generateQualitasMetrics()
 
     classData.to_csv(f'{targetPath}/class.csv', index=False)
     methodData.to_csv(f'{targetPath}/method.csv', index=False)
     packageData.to_csv(f'{targetPath}/package.csv', index=False)
 
-    classData, methodData, packageData, remainingOr = generateDatasetRemainings(remainingOr, classData, methodData, packageData, targetPath)
 
     if type == 'download':
+        classData, methodData, packageData, remainingOr = generateDatasetRemainings(remainingOr, classData, methodData,
+                                                                                    packageData, targetPath, toolPath,
+                                                                                    reposPath)
+        frame = frame[~frame['id'].isin(remainingOr['id'])]
+        maintainer = Maintenance(dimensions)
         i = 0
         remainingOr = remainingOr.reset_index(drop=True)
         remaining = remainingOr.copy()
@@ -71,7 +73,7 @@ def generateDataset(frame: pd.DataFrame, targetPath: str, dimensions=['totalSize
             updates = updates.reset_index(drop=True)
             updates = updates[updates.index.isin(remaining.index)]
 
-            classData, methodData, packageData, remaining = generateDatasetRemainings(updates, classData, methodData, packageData, targetPath)
+            classData, methodData, packageData, remaining = generateDatasetRemainings(updates, classData, methodData, packageData, targetPath, toolPath, reposPath)
             frame = frame[~frame['id'].isin(remaining['id'])]
 
             replacements = updates[~updates['id'].isin(remaining['id'])]
@@ -102,17 +104,17 @@ def generateDataset(frame: pd.DataFrame, targetPath: str, dimensions=['totalSize
         classData.to_csv(f'{targetPath}/class.csv', index=False)
         methodData.to_csv(f'{targetPath}/method.csv', index=False)
         packageData.to_csv(f'{targetPath}/package.csv', index=False)
-        newSample.to_csv(f'{targetPath}/newSample.csv', index=False)
-        frame.to_csv(f'{targetPath}/frameWithoutRem.csv', index=False)
+        newSample.to_csv(f'{targetPath}/sample.csv', index=False)
+        frame.to_csv(f'{targetPath}/../frame.csv', index=False)
 
         finish = datetime.datetime.now()
         print('Start:', start, '- Finish:', finish, " -  Time:", finish - start)
 
 
-def generateDatasetRemainings(remainings, classData, methodData, packageData, targetPath):
+def generateDatasetRemainings(remainings, classData, methodData, packageData, targetPath, toolPath: str, reposPath: str):
 
-    analyzer = SourceMeter('./SourceMeter/SMResults', './SourceMeter/tool/Java/AnalyzerJava.exe', './SourceMeter/repos', 6)
-    generator = DatasetGenerator(analyzer, './SourceMeter/repos')
+    analyzer = SourceMeter(f'{toolPath}/SMResults', f'{toolPath}/tool/Java/AnalyzerJava.exe', reposPath, 6)
+    generator = DatasetGenerator(analyzer, reposPath)
     classRem, methodRem, packageRem, remaining = generator.generateDataset(remainings, 1)
 
 
@@ -126,7 +128,11 @@ def generateDatasetRemainings(remainings, classData, methodData, packageData, ta
 
     return classData, methodData, packageData, remaining
 
-def replaceOutliers(frame: pd.DataFrame, targetPath: str, toReplace: pd.DataFrame, dimensions=['totalSize']):
+def replaceOutliers(frame: pd.DataFrame, targetPath: str, toReplace: list[str], toolPath: str, reposPath: str, dimensions=['totalSize']):
+    if len(toReplace) == 0:
+        print(f'Define the repositories to replace')
+        return
+
     start = datetime.datetime.now()
 
     sample = pd.read_csv(f'{targetPath}/sample.csv')
@@ -154,7 +160,7 @@ def replaceOutliers(frame: pd.DataFrame, targetPath: str, toReplace: pd.DataFram
         updates = updates[updates.index.isin(remaining.index)]
 
         classData, methodData, packageData, remaining = generateDatasetRemainings(updates, classData, methodData,
-                                                                                  packageData, targetPath)
+                                                                                  packageData, targetPath, toolPath, reposPath)
         frame = frame[~frame['id'].isin(remaining['id'])]
 
         replacements = updates[~updates['id'].isin(remaining['id'])]
@@ -164,25 +170,27 @@ def replaceOutliers(frame: pd.DataFrame, targetPath: str, toReplace: pd.DataFram
     classData.to_csv(f'{targetPath}/class.csv', index=False)
     methodData.to_csv(f'{targetPath}/method.csv', index=False)
     packageData.to_csv(f'{targetPath}/package.csv', index=False)
-    newSample.to_csv(f'{targetPath}/sample2.csv', index=False)
-    frame.to_csv(f'{targetPath}/frame.csv', index=False)
+    newSample.to_csv(f'{targetPath}/sample.csv', index=False)
+    frame.to_csv(f'{targetPath}/../frame.csv', index=False)
 
     finish = datetime.datetime.now()
     print(f'Start: {start} - Finish: {finish} -  Time:{finish - start}\n\n')
 
 
-
 if __name__ == '__main__':
 
     CURRENT_SAMPLE_PATH = './datasets/caseStudy/currentSample'
-
     QUALITAS_PATH = './datasets/caseStudy/qualitas'
-
     QUALITAS_UPDATED_PATH = './datasets/caseStudy/qualitasUpdated'
+
+    TOOL_PATH = './SourceMeter'
+    REPO_DOWNLOAD_PATH = f'{TOOL_PATH}/repos'
 
     frame = createFrame()
 
     frame.to_csv('./datasets/caseStudy/frame.csv', index=False)
+
+    generateDataset(frame, QUALITAS_PATH, TOOL_PATH, f'{QUALITAS_PATH}/dataset', type="qualitas")
 
     maintainer = Maintenance(['totalSize'])
 
@@ -192,10 +200,13 @@ if __name__ == '__main__':
 
     qualitasUpdated.to_csv(f'{QUALITAS_UPDATED_PATH}/sample.csv', index=False)
 
-    generateDataset(frame, QUALITAS_UPDATED_PATH)
+    generateDataset(frame, QUALITAS_UPDATED_PATH, TOOL_PATH, REPO_DOWNLOAD_PATH)
+
+    frame = pd.read_csv('./datasets/caseStudy/frame.csv')
 
     sampleUpdated = SB.createKMeansSample(frame, 112)
 
     sampleUpdated.to_csv(f'{CURRENT_SAMPLE_PATH}/sample.csv', index=False)
 
-    generateDataset(frame, CURRENT_SAMPLE_PATH)
+    generateDataset(frame, CURRENT_SAMPLE_PATH, TOOL_PATH, REPO_DOWNLOAD_PATH)
+
