@@ -20,11 +20,17 @@ class SourceMeter:
         try:
             stdout = subprocess.run(command, stdout=subprocess.PIPE, universal_newlines=True, check=True, text=True,
                                 shell=True).stdout
-        except Exception as error:
+        except subprocess.CalledProcessError as error:
+            if ('Required java version is Java 11' in error.output):
+                print(error.output)
+                exit()
             raise Exception("Analysis execution error, Revise log analysis files")
 
 
 
     def getResultsDir(self):
         return self._resultsDir
+
+    def getProjectsPath(self):
+        return self._projectsPath
 
