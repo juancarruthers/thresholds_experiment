@@ -17,14 +17,14 @@ class DatasetGenerator:
         self._targetDate = targetDate
         self._util = Utilities()
 
-    def generateDataset(self, dataset: pd.DataFrame, threads=4) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-        total_memory = psutil.virtual_memory().total
-        total_memory_gb = total_memory / (1024 ** 3)
+    def generateDataset(self, dataset: pd.DataFrame, threads=3, memoryPropUtil = 0.5) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        totalMemory = psutil.virtual_memory().total
+        totalMemoryGB = totalMemory / (1024 ** 3)
 
         if threads == 1:
-            os.environ['_JAVA_OPTIONS'] = f'-Xmx{int(total_memory_gb * 0.7)}g'
+            os.environ['_JAVA_OPTIONS'] = f'-Xmx{int(totalMemoryGB * memoryPropUtil)}g'
         else:
-            os.environ['_JAVA_OPTIONS'] = f'-Xmx{int(total_memory_gb * 0.2)}g'
+            os.environ['_JAVA_OPTIONS'] = f'-Xmx{int(totalMemoryGB * (memoryPropUtil/threads))}g'
 
         classData = pd.DataFrame()
         methodData = pd.DataFrame()
@@ -47,6 +47,8 @@ class DatasetGenerator:
         if classData.shape[0] == 0:
             remainingProjects = dataset
         else:
+            classData = self._excludeFiles(classData)
+            methodData = self._excludeFiles(methodData)
             remainingProjects = dataset[~dataset['url'].isin(packageData['Repository'])]
 
         return classData, methodData, packageData, remainingProjects
@@ -89,7 +91,7 @@ class DatasetGenerator:
 
             self._util.deleteFolder(f'{self._analyzer.getResultsDir()}/{project["name"]}')
 
-            if (classData.shape[0] == 0):
+            if (classData.shape[0] == 0) or (methodData.shape[0] == 0):
                 raise Exception("Empty Analysis Files")
 
             finish = datetime.now()
@@ -100,7 +102,9 @@ class DatasetGenerator:
             classData['Repository'] = project['url']
             methodData['Repository'] = project['url']
             packageData['Repository'] = project['url']
-            return classData, methodData, packageData
+            return (classData[['Repository', 'Name', 'LongName', 'Path', 'LOC', 'WMC']],
+                    methodData[['Repository', 'Name', 'LongName', 'Path', 'LOC', 'McCC']],
+                    packageData)
 
         except Exception as error:
             self._util.deleteFolder(os.path.abspath(f'{path}/{folderName}'))
@@ -134,17 +138,23 @@ class DatasetGenerator:
                 self._logError(project['url'], error)
                 raise Exception('Error in repository checkout')
 
-    def generateQualitasMetrics(self, projectsPath: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    def _excludeFiles(self, df: pd.DataFrame):
+        df = df[df['LOC'] > 0]
+        df = df[~df['Path'].str.match(r'.*src\\test.*')]
+        df = df[~df['Path'].str.match(r'.*src\\tests.*')]
+        return df
+
+    def generateQualitasMetrics(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         classData = pd.DataFrame()
         methodData = pd.DataFrame()
         packageData = pd.DataFrame()
 
-        dataset = pd.DataFrame({'name': os.listdir(projectsPath)})
+        dataset = pd.DataFrame({'name': os.listdir(self._analyzer.getProjectsPath())})
 
         try:
-            for project in os.listdir(projectsPath):
-                version = os.listdir(f'{projectsPath}/{project}')[-1]
-                fullPath = os.path.abspath(f'{projectsPath}/{project}/{version}/compressed')
+            for project in os.listdir(self._analyzer.getProjectsPath()):
+                version = os.listdir(f'{self._analyzer.getProjectsPath()}/{project}')[-1]
+                fullPath = os.path.abspath(f'{self._analyzer.getProjectsPath()}/{project}/{version}/compressed')
                 for file in os.listdir(fullPath):
                     if file.endswith(('.tar.gz', '.tar.bz2', '.tgz')):
                         tar = tarfile.open(f'{fullPath}/{file}')
