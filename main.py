@@ -1,19 +1,12 @@
 ﻿import os
 import datetime
-import numpy as np
 import pandas as pd
-import psutil
 from dateutil.relativedelta import relativedelta
 import SampleBuilder as SB
 from GithubGraphQL import GithubGraphQL as GQL
-import scipy.stats as sp
-from scipy.spatial.distance import euclidean, cosine
 from Maintenance import Maintenance
-import SizeThresholds as ST
 from SourceMeter.DatasetGenerator import DatasetGenerator
 from SourceMeter.SourceMeter import SourceMeter
-from Utilities import Utilities
-
 
 def createFrame():
     today = datetime.date.today()
@@ -37,8 +30,6 @@ def createFrame():
     return frame
 
 
-
-
 def generateDataset(frame: pd.DataFrame, targetPath: str, toolPath: str, reposPath: str, dimensions=['totalSize'], type='download'):
 
     start = datetime.datetime.now()
@@ -54,7 +45,6 @@ def generateDataset(frame: pd.DataFrame, targetPath: str, toolPath: str, reposPa
     classData.to_csv(f'{targetPath}/class.csv', index=False)
     methodData.to_csv(f'{targetPath}/method.csv', index=False)
     packageData.to_csv(f'{targetPath}/package.csv', index=False)
-
 
     if type == 'download':
         classData, methodData, packageData, remainingOr = generateDatasetRemainings(remainingOr, classData, methodData,
@@ -79,27 +69,6 @@ def generateDataset(frame: pd.DataFrame, targetPath: str, toolPath: str, reposPa
             replacements = updates[~updates['id'].isin(remaining['id'])]
             newSample = pd.concat([newSample, replacements])
             i += 1
-            '''
-            if remaining.shape[0] == 0:
-                util = Utilities()
-                classData = util.excludeTestFilesMeasures(classData)
-                methodData = util.excludeTestFilesMeasures(methodData)
-                outliers = ST.getOutliers(methodData, ['McCC'])
-                classData = classData[~classData['Repository'].isin(outliers)]
-                methodData = methodData[~methodData['Repository'].isin(outliers)]
-                packageData = packageData[~packageData['Repository'].isin(outliers)]
-
-                frame = frame[~frame['id'].isin(remainingOr['id'])]
-
-                remainingOr = newSample[newSample['url'].isin(outliers)]
-                sample = newSample.copy()
-
-                i = 0
-                remainingOr = remainingOr.reset_index(drop=True)
-                remaining = remainingOr.copy()
-                newSample = sample[~sample['id'].isin(remaining['id'])]
-
-            '''
 
         classData.to_csv(f'{targetPath}/class.csv', index=False)
         methodData.to_csv(f'{targetPath}/method.csv', index=False)
@@ -116,7 +85,6 @@ def generateDatasetRemainings(remainings, classData, methodData, packageData, ta
     analyzer = SourceMeter(f'{toolPath}/SMResults', f'{toolPath}/tool/Java/AnalyzerJava.exe', reposPath, 6)
     generator = DatasetGenerator(analyzer, reposPath)
     classRem, methodRem, packageRem, remaining = generator.generateDataset(remainings, 1)
-
 
     if classRem.shape[0] > 0:
         classData = pd.concat([classData, classRem])
@@ -190,23 +158,28 @@ if __name__ == '__main__':
 
     frame.to_csv('./datasets/caseStudy/frame.csv', index=False)
 
+    # Generate the Qualitas Corpus dataset
     generateDataset(frame, QUALITAS_PATH, TOOL_PATH, f'{QUALITAS_PATH}/dataset', type="qualitas")
 
     maintainer = Maintenance(['totalSize'])
 
     qualitas = pd.read_csv(f'{QUALITAS_PATH}/sample.csv')
 
+    # Update projects in the QC
     qualitasUpdated, _, _ = maintainer.updateSample(frame, qualitas, 'DT', 112, **{'nClusters': 5})
 
     qualitasUpdated.to_csv(f'{QUALITAS_UPDATED_PATH}/sample.csv', index=False)
 
+    # Generate the dataset for the updated version of QC
     generateDataset(frame, QUALITAS_UPDATED_PATH, TOOL_PATH, REPO_DOWNLOAD_PATH)
 
     frame = pd.read_csv('./datasets/caseStudy/frame.csv')
 
+    # Obtain a current sample from Github
     sampleUpdated = SB.createKMeansSample(frame, 112)
 
     sampleUpdated.to_csv(f'{CURRENT_SAMPLE_PATH}/sample.csv', index=False)
 
+    # Generate the dataset for the current sample
     generateDataset(frame, CURRENT_SAMPLE_PATH, TOOL_PATH, REPO_DOWNLOAD_PATH)
 
