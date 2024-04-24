@@ -72,8 +72,9 @@ class Utilities:
             if reqType == "POST":
                 response = requests.post(url, json=query, headers=headers, timeout=120).json()
                 condition: bool | list = response.get("errors", False)
-                if condition and 'type' in condition[0]:
-                    if condition[0]['type'] == 'NOT_FOUND': return response, False
+                if condition:
+                    if 'type' in condition[0]:
+                        if condition[0]['type'] == 'NOT_FOUND': return response, False
 
             else:
                 response = requests.get(url, headers=headers, timeout=120).json()
@@ -97,8 +98,11 @@ class Utilities:
 
         except PermissionError as error:
             if error.errno == 13:
-                os.chmod(error.filename, stat.S_IWUSR | stat.S_IREAD)
+                if (os.path.isfile(error.filename)):
+                    os.chmod(error.filename, stat.S_IWUSR | stat.S_IREAD)
                 self.deleteFolder(folder)
+            else:
+                print(error)
 
     def excludeTestFilesMeasures(self, dataset: pd.DataFrame):
         dataset = dataset[dataset['LOC'] > 0]
