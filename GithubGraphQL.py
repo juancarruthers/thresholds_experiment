@@ -3,7 +3,6 @@ import shutil
 import pandas as pd
 import datetime
 import concurrent.futures
-from scipy.spatial.distance import euclidean
 from Filters.__init__ import *
 from Utilities import Utilities
 
@@ -91,7 +90,7 @@ class GithubGraphQL:
         except KeyboardInterrupt:
             self.quit = True
 
-    def extractFrame(self, listRepo:pd.DataFrame, language='Java'):
+    def extractFrame(self, listRepo:pd.DataFrame = pd.DataFrame(), language='Java'):
         try:
             frame = self._exploreRepos()
             #listRepo = listRepo[~listRepo['url'].isin(frame['url'])]

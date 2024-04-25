@@ -1,4 +1,6 @@
 env
+venv
+.vscode
 .idea
 token
 graphs
@@ -8,7 +10,6 @@ backup
 SM
 __pycache__
 datasets
-Health_Indicator_Prediction
 SourceMeter/tool
 SourceMeter/repos
 SourceMeter/SMResults

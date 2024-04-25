@@ -25,7 +25,7 @@ def createFrame():
         os.mkdir(folderPath)
 
     graphql = GQL(QUERY_FILTER, SECOND_FILTER, folderPath)
-    frame = graphql.extractFrame(pd.read_csv('./datasets/longStudy/listProj.csv'))
+    frame = graphql.extractFrame()#pd.read_csv('./datasets/longStudy/listProj.csv'))
 
     return frame
 
@@ -147,39 +147,50 @@ def replaceOutliers(frame: pd.DataFrame, targetPath: str, toReplace: list[str], 
 
 if __name__ == '__main__':
 
-    CURRENT_SAMPLE_PATH = './datasets/caseStudy/currentSample'
-    QUALITAS_PATH = './datasets/caseStudy/qualitas'
-    QUALITAS_UPDATED_PATH = './datasets/caseStudy/qualitasUpdated'
+    CURRENT_SAMPLE_PATH = './datasets/test/currentSample'
+    QUALITAS_PATH = './datasets/test/qualitas'
+    QUALITAS_UPDATED_PATH = './datasets/test/qualitasUpdated'
 
     TOOL_PATH = './SourceMeter'
     REPO_DOWNLOAD_PATH = f'{TOOL_PATH}/repos'
 
+    paths = [CURRENT_SAMPLE_PATH, QUALITAS_PATH, QUALITAS_UPDATED_PATH, REPO_DOWNLOAD_PATH]
+
+    for path in paths:
+        if not os.path.exists(path):
+            os.makedirs(path)
+
+    # Retrieve a sampling frame according to a specific quality criteria
     frame = createFrame()
 
-    frame.to_csv('./datasets/caseStudy/frame.csv', index=False)
+    frame.to_csv('./datasets/test/frame.csv', index=False)
 
-    # Generate the Qualitas Corpus dataset
+    '''
+    # Generate metrics for the Qualitas Corpus (QC) dataset
     generateDataset(frame, QUALITAS_PATH, TOOL_PATH, f'{QUALITAS_PATH}/dataset', type="qualitas")
-
-    maintainer = Maintenance(['totalSize'])
-
-    qualitas = pd.read_csv(f'{QUALITAS_PATH}/sample.csv')
-
-    # Update projects in the QC
-    qualitasUpdated, _, _ = maintainer.updateSample(frame, qualitas, 'DT', 112, **{'nClusters': 5})
-
-    qualitasUpdated.to_csv(f'{QUALITAS_UPDATED_PATH}/sample.csv', index=False)
-
-    # Generate the dataset for the updated version of QC
-    generateDataset(frame, QUALITAS_UPDATED_PATH, TOOL_PATH, REPO_DOWNLOAD_PATH)
-
-    frame = pd.read_csv('./datasets/caseStudy/frame.csv')
+    '''
 
     # Obtain a current sample from Github
     sampleUpdated = SB.createKMeansSample(frame, 112)
 
     sampleUpdated.to_csv(f'{CURRENT_SAMPLE_PATH}/sample.csv', index=False)
 
-    # Generate the dataset for the current sample
+    # Generate metrics for the current sample
     generateDataset(frame, CURRENT_SAMPLE_PATH, TOOL_PATH, REPO_DOWNLOAD_PATH)
+
+    # Instantiate the dataset maintainer
+
+    maintainer = Maintenance(['totalSize'])
+
+    qualitas = pd.read_csv(f'{QUALITAS_PATH}/sample.csv')
+
+    # Update projects in the Qualitas Corpus
+
+    qualitasUpdated, _, _ = maintainer.updateSample(frame, qualitas, 'DT', 112, **{'nClusters': 5})
+
+    qualitasUpdated.to_csv(f'{QUALITAS_UPDATED_PATH}/sample.csv', index=False)
+
+    # Generate metrics for the updated version of the Qualitas
+    generateDataset(frame, QUALITAS_UPDATED_PATH, TOOL_PATH, REPO_DOWNLOAD_PATH)
+
 
