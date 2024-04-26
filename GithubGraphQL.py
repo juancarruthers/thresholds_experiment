@@ -86,25 +86,25 @@ class GithubGraphQL:
                 if (os.path.isdir('./.backup')):
                     shutil.rmtree('./.backup')
                 print(f"\nTotal number of repositories retrieved in the: {totalRepos}")
-                return dataset
+                return dataset, totalRepos, difference
         except KeyboardInterrupt:
             self.quit = True
 
     def extractFrame(self, listRepo:pd.DataFrame = pd.DataFrame(), language='Java'):
         try:
-            frame = self._exploreRepos()
-            #listRepo = listRepo[~listRepo['url'].isin(frame['url'])]
+            frame, totalReposWithoutFiltering, duration = self._exploreRepos()
 
-            #newDataset = self._getRepoDataByURL(listRepo, language)
-
-            #updatedRepos = pd.DataFrame(newDataset)
-            #frame = pd.concat([frame, updatedRepos])
+            if listRepo.shape[0] > 0:
+                listRepo = listRepo[~listRepo['url'].isin(frame['url'])]
+                newDataset = self._getRepoDataByURL(listRepo, language)
+                updatedRepos = pd.DataFrame(newDataset)
+                frame = pd.concat([frame, updatedRepos])
 
             frame = frame.drop_duplicates(subset=['id'])
             print(f"Number of projects after filtering: {frame.shape[0]}")
             frame.to_csv(self._folderPath + "/frameUpdated.csv", index=False)
 
-            return frame
+            return frame, totalReposWithoutFiltering, duration
 
         except KeyboardInterrupt:
             self.quit = True

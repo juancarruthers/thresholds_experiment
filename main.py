@@ -7,6 +7,8 @@ from GithubGraphQL import GithubGraphQL as GQL
 from Maintenance import Maintenance
 from SourceMeter.DatasetGenerator import DatasetGenerator
 from SourceMeter.SourceMeter import SourceMeter
+from Utilities import Utilities
+
 
 def createFrame():
     today = datetime.date.today()
@@ -25,9 +27,9 @@ def createFrame():
         os.mkdir(folderPath)
 
     graphql = GQL(QUERY_FILTER, SECOND_FILTER, folderPath)
-    frame = graphql.extractFrame()#pd.read_csv('./datasets/longStudy/listProj.csv'))
+    frame, totalReposWithoutFiltering, duration = graphql.extractFrame()
 
-    return frame
+    return frame, totalReposWithoutFiltering, duration
 
 
 def generateDataset(frame: pd.DataFrame, targetPath: str, toolPath: str, reposPath: str, dimensions=['totalSize'], type='download'):
@@ -79,6 +81,8 @@ def generateDataset(frame: pd.DataFrame, targetPath: str, toolPath: str, reposPa
         finish = datetime.datetime.now()
         print('Start:', start, '- Finish:', finish, " -  Time:", finish - start)
 
+        return (finish - start)
+
 
 def generateDatasetRemainings(remainings, classData, methodData, packageData, targetPath, toolPath: str, reposPath: str):
 
@@ -110,7 +114,11 @@ def replaceOutliers(frame: pd.DataFrame, targetPath: str, toReplace: list[str], 
     methodData = pd.read_csv(f'{targetPath}/method.csv')
     packageData = pd.read_csv(f'{targetPath}/package.csv')
     remainingOr = sample[sample['url'].isin(toReplace)]
-    frame = frame[~frame['id'].isin(toReplace)]
+    if remainingOr.shape[0] == 0:
+        print(f'The outliers are not in the sample')
+        return
+
+    frame = frame[~frame['url'].isin(toReplace)]
 
     classData = classData[~classData['Repository'].isin(remainingOr['url'])]
     methodData = methodData[~methodData['Repository'].isin(remainingOr['url'])]
@@ -147,23 +155,34 @@ def replaceOutliers(frame: pd.DataFrame, targetPath: str, toReplace: list[str], 
 
 if __name__ == '__main__':
 
-    CURRENT_SAMPLE_PATH = './datasets/test/currentSample'
-    QUALITAS_PATH = './datasets/test/qualitas'
-    QUALITAS_UPDATED_PATH = './datasets/test/qualitasUpdated'
+    DATASETS_ROOT_PATH = './datasets/test'
+
+    CURRENT_SAMPLE_PATH = f'{DATASETS_ROOT_PATH}/currentSample'
+    QUALITAS_PATH = f'{DATASETS_ROOT_PATH}/qualitas'
+    QUALITAS_UPDATED_PATH = f'{DATASETS_ROOT_PATH}/qualitasUpdated'
+
+    SAMPLING_FRAME_PATH = f'{DATASETS_ROOT_PATH}/frame.csv'
+    EXECUTION_REPORT_PATH = f'{DATASETS_ROOT_PATH}/executionReport.txt'
 
     TOOL_PATH = './SourceMeter'
     REPO_DOWNLOAD_PATH = f'{TOOL_PATH}/repos'
 
-    paths = [CURRENT_SAMPLE_PATH, QUALITAS_PATH, QUALITAS_UPDATED_PATH, REPO_DOWNLOAD_PATH]
+    paths = [DATASETS_ROOT_PATH, CURRENT_SAMPLE_PATH, QUALITAS_PATH, QUALITAS_UPDATED_PATH, REPO_DOWNLOAD_PATH]
 
     for path in paths:
         if not os.path.exists(path):
             os.makedirs(path)
 
-    # Retrieve a sampling frame according to a specific quality criteria
-    frame = createFrame()
+    util = Utilities()
+    util.writeTxtFile(EXECUTION_REPORT_PATH, f'Execution date: {datetime.datetime.now()}')
 
-    frame.to_csv('./datasets/test/frame.csv', index=False)
+    # Retrieve a sampling frame according to a specific quality criteria
+    frame, totalReposWithoutFiltering, duration = createFrame()
+
+    frame.to_csv(SAMPLING_FRAME_PATH, index=False)
+    util.writeTxtFile(EXECUTION_REPORT_PATH, f'Obtained projects without filtering: {totalReposWithoutFiltering}')
+    util.writeTxtFile(EXECUTION_REPORT_PATH, f'Obtained projects with filtering: {frame.shape[0]}')
+    util.writeTxtFile(EXECUTION_REPORT_PATH, f'Execution duration - Project extraction: {duration}')
 
     '''
     # Generate metrics for the Qualitas Corpus (QC) dataset
@@ -176,7 +195,8 @@ if __name__ == '__main__':
     sampleUpdated.to_csv(f'{CURRENT_SAMPLE_PATH}/sample.csv', index=False)
 
     # Generate metrics for the current sample
-    generateDataset(frame, CURRENT_SAMPLE_PATH, TOOL_PATH, REPO_DOWNLOAD_PATH)
+    duration = generateDataset(frame, CURRENT_SAMPLE_PATH, TOOL_PATH, REPO_DOWNLOAD_PATH)
+    util.writeTxtFile(EXECUTION_REPORT_PATH, f'Execution duration - Current sample metric generation: {duration}')
 
     # Instantiate the dataset maintainer
 
@@ -191,6 +211,7 @@ if __name__ == '__main__':
     qualitasUpdated.to_csv(f'{QUALITAS_UPDATED_PATH}/sample.csv', index=False)
 
     # Generate metrics for the updated version of the Qualitas
-    generateDataset(frame, QUALITAS_UPDATED_PATH, TOOL_PATH, REPO_DOWNLOAD_PATH)
+    duration = generateDataset(frame, QUALITAS_UPDATED_PATH, TOOL_PATH, REPO_DOWNLOAD_PATH)
+    util.writeTxtFile(EXECUTION_REPORT_PATH, f'Execution duration - Qualitas Corpus update metric generation: {duration}')
 
 

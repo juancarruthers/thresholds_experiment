@@ -22,6 +22,11 @@ class Utilities:
 
         return query
 
+    def writeTxtFile(self, filePath: str, text: str):
+        with open(filePath, "w") as file:
+            file.write(f'{text}\n')
+
+
     def restoreCheckPoint(self) -> tuple[int, int, list]:
         startSize = 10000
         sizeInc = 2000
