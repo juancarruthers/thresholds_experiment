@@ -42,7 +42,7 @@ class GithubGraphQL:
                             self._sizeInc -= j
                         else:
                             self._sizeInc += j
-                        repoCountQuery = {'query': self._repoCountQueryFile, 'variables': {'query': self._queryVar + str(self._startSize) + ".." + str(self._startSize + self._sizeInc)}}
+                        repoCountQuery = {'query': self._repoCountQueryFile, 'variables': {'query': f'{self._queryVar}{str(self._startSize)}..{str(self._startSize + self._sizeInc)}'}}
                         repoCountSubQuery = util.makeRequest(repoCountQuery)['data']['search']['repositoryCount']
                         j += j
                         k += 1

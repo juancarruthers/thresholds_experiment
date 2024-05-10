@@ -22,7 +22,10 @@ class PullReqFilter(GraphqlFilter):
                 variables = {'owner': owner, 'repoName': repositoryName}
                 lastPullReqQuery = {'query': query, 'variables': variables}
                 jsonResponse = util.makeRequest(lastPullReqQuery)
-                pullReqCount = jsonResponse['data']['repository']['pullRequests']['totalCount']
+                pullReqCount = 0
+                if 'data' in jsonResponse:
+                    pullReqCount = jsonResponse['data']['repository']['pullRequests']['totalCount']
+
                 if pullReqCount > 0:
                     newJson.update({state+"PullReqCount": pullReqCount, state+"PullReqLastDate": jsonResponse['data']['repository']['pullRequests']['nodes'][0]['createdAt']})
                 else:

@@ -27,9 +27,9 @@ class Utilities:
             file.write(f'{text}\n')
 
 
-    def restoreCheckPoint(self) -> tuple[int, int, list]:
-        startSize = 10000
-        sizeInc = 2000
+    def restoreCheckPoint(self, p_sizeInc= 2000, p_startSize=10000) -> tuple[int, int, list]:
+        startSize = p_startSize
+        sizeInc = p_sizeInc
         path = './.backup'
         if os.path.isdir(path):
             backupData = pd.read_csv(path + '/largerFrame.csv', encoding='unicode_escape').to_dict('records')
@@ -64,7 +64,9 @@ class Utilities:
                 variables : dict = query['variables']
                 first = round(variables['first']/iterations)
                 query2['variables']['first'] = first
-
+            elif "Something went wrong while executing your query. Please include" in str(condition):
+                if iterations > 2:
+                    return response
             time.sleep(random.choice(self._reqSleepTime))
             headers = {'Authorization': 'Bearer ' + random.choice(tokens)}
             response, condition = self._requestCondition(query2, reqType, url, headers)
@@ -75,7 +77,12 @@ class Utilities:
         condition: bool
         try:
             if reqType == "POST":
-                response = requests.post(url, json=query, headers=headers, timeout=120).json()
+                response = requests.post(url, json=query, headers=headers, timeout=120)
+                if response.status_code >= 400:
+                    return {'errors': {'message': 'GITHUB: We had issues producing the response to your request!'}}, False
+                else:
+                    response = response.json()
+
                 condition: bool | list = response.get("errors", False)
                 if condition:
                     if 'type' in condition[0]:
