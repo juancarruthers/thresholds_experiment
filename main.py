@@ -36,7 +36,7 @@ def generateDataset(frame: pd.DataFrame, targetPath: str, toolPath: str, reposPa
 
     start = datetime.datetime.now()
 
-    analyzer = SourceMeter(f'{toolPath}/SMResults', f'{toolPath}/tool/Java/AnalyzerJava.exe', reposPath)
+    analyzer = SourceMeter(f'{toolPath}/../SMResults', f'{toolPath}/Java/AnalyzerJava.exe', reposPath)
     generator = DatasetGenerator(analyzer, reposPath)
     if type == "download":
         sample = pd.read_csv(f'{targetPath}/sample.csv')
@@ -86,7 +86,7 @@ def generateDataset(frame: pd.DataFrame, targetPath: str, toolPath: str, reposPa
 
 def generateDatasetRemainings(remainings, classData, methodData, packageData, targetPath, toolPath: str, reposPath: str):
 
-    analyzer = SourceMeter(f'{toolPath}/SMResults', f'{toolPath}/tool/Java/AnalyzerJava.exe', reposPath, 6)
+    analyzer = SourceMeter(f'{toolPath}/../SMResults', f'{toolPath}/Java/AnalyzerJava.exe', reposPath, 6)
     generator = DatasetGenerator(analyzer, reposPath)
     classRem, methodRem, packageRem, remaining = generator.generateDataset(remainings, 1)
 
@@ -164,8 +164,8 @@ if __name__ == '__main__':
     SAMPLING_FRAME_PATH = f'{DATASETS_ROOT_PATH}/frame.csv'
     EXECUTION_REPORT_PATH = f'{DATASETS_ROOT_PATH}/executionReport.txt'
 
-    TOOL_PATH = './SourceMeter'
-    REPO_DOWNLOAD_PATH = f'{TOOL_PATH}/repos'
+    SOURCEMETER_PATH = './SourceMeter/tool'
+    REPO_DOWNLOAD_PATH = f'{SOURCEMETER_PATH}/../repos'
 
     paths = [DATASETS_ROOT_PATH, CURRENT_SAMPLE_PATH, QUALITAS_PATH, QUALITAS_UPDATED_PATH, REPO_DOWNLOAD_PATH]
 
@@ -195,7 +195,7 @@ if __name__ == '__main__':
     sampleUpdated.to_csv(f'{CURRENT_SAMPLE_PATH}/sample.csv', index=False)
 
     # Generate metrics for the current sample
-    duration = generateDataset(frame, CURRENT_SAMPLE_PATH, TOOL_PATH, REPO_DOWNLOAD_PATH)
+    duration = generateDataset(frame, CURRENT_SAMPLE_PATH, SOURCEMETER_PATH, REPO_DOWNLOAD_PATH)
     util.writeTxtFile(EXECUTION_REPORT_PATH, f'Execution duration - Current sample metric generation: {duration}')
 
     # Instantiate the dataset maintainer
@@ -211,7 +211,7 @@ if __name__ == '__main__':
     qualitasUpdated.to_csv(f'{QUALITAS_UPDATED_PATH}/sample.csv', index=False)
 
     # Generate metrics for the updated version of the Qualitas
-    duration = generateDataset(frame, QUALITAS_UPDATED_PATH, TOOL_PATH, REPO_DOWNLOAD_PATH)
+    duration = generateDataset(frame, QUALITAS_UPDATED_PATH, SOURCEMETER_PATH, REPO_DOWNLOAD_PATH)
     util.writeTxtFile(EXECUTION_REPORT_PATH, f'Execution duration - Qualitas Corpus update metric generation: {duration}')
 
 
