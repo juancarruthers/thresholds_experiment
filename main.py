@@ -174,7 +174,7 @@ if __name__ == '__main__':
             os.makedirs(path)
 
     util = Utilities()
-    util.writeTxtFile(EXECUTION_REPORT_PATH, f'Execution date: {datetime.datetime.now()}')
+    util.writeTxtFile(EXECUTION_REPORT_PATH, f'Execution date: {datetime.datetime.now()}', True)
 
     # Retrieve a sampling frame according to a specific quality criteria
     frame, totalReposWithoutFiltering, duration = createFrame()

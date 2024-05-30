@@ -22,9 +22,13 @@ class Utilities:
 
         return query
 
-    def writeTxtFile(self, filePath: str, text: str):
-        with open(filePath, "w") as file:
-            file.write(f'{text}\n')
+    def writeTxtFile(self, filePath: str, text: str, new=False):
+        if new:
+            with open(filePath, "w") as file:
+                file.write(f'{text}\n')
+        else:
+            with open(filePath, "a") as file:
+                file.write(f'{text}\n')
 
 
     def restoreCheckPoint(self, p_sizeInc= 2000, p_startSize=10000) -> tuple[int, int, list]:
