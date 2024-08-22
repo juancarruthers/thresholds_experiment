@@ -87,13 +87,16 @@ class Utilities:
                 response = response.json()
                 condition: bool | list = response.get("errors", False)
 
-                if resStatus >= 400:
+                if resStatus >= 500:
                     print(condition[0])
                     if "This may be the result of a timeout, or it could be a GitHub bug." in condition[0]['message']:
                         pageSize: int = query['variables']['first']
                         query['variables']['first'] = pageSize // 2
-
                     return self._requestCondition(query, reqType, url, headers)
+
+                elif resStatus >= 400:
+                    print(response)
+                    raise Exception(response)
 
                 if condition:
                     if 'type' in condition[0]:

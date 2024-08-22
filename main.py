@@ -160,7 +160,7 @@ def replaceOutliers(frame: pd.DataFrame, targetPath: str, toReplace: list[str], 
 
 if __name__ == '__main__':
 
-    DATASETS_ROOT_PATH = './datasets/test2'
+    DATASETS_ROOT_PATH = './datasets/test'
 
     CURRENT_SAMPLE_PATH = f'{DATASETS_ROOT_PATH}/currentSample'
     QUALITAS_PATH = f'{DATASETS_ROOT_PATH}/qualitas'
