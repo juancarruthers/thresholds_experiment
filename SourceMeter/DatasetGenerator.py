@@ -51,6 +51,7 @@ class DatasetGenerator:
             methodData = self._excludeFiles(methodData)
             remainingProjects = dataset[~dataset['url'].isin(packageData['Repository'])]
 
+        self._util.deleteFolder(self._downloadPath)
         return classData, methodData, packageData, remainingProjects
 
     def _downloadRepositoryData(self, project: pd.Series) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:

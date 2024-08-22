@@ -8,6 +8,7 @@ from Maintenance import Maintenance
 from SourceMeter.DatasetGenerator import DatasetGenerator
 from SourceMeter.SourceMeter import SourceMeter
 from Utilities import Utilities
+import platform
 
 
 def createFrame():
@@ -35,8 +36,12 @@ def createFrame():
 def generateDataset(frame: pd.DataFrame, targetPath: str, toolPath: str, reposPath: str, dimensions=['totalSize'], type='download'):
 
     start = datetime.datetime.now()
+    exec = "AnalyzerJava"
+    if platform.system() == "Windows":
+        exec = "AnalyzerJava.exe"
 
-    analyzer = SourceMeter(f'{toolPath}/../SMResults', f'{toolPath}/Java/AnalyzerJava.exe', reposPath)
+
+    analyzer = SourceMeter(f'{toolPath}/../SMResults', f'{toolPath}/Java/{exec}', reposPath)
     generator = DatasetGenerator(analyzer, reposPath)
     if type == "download":
         sample = pd.read_csv(f'{targetPath}/sample.csv')
@@ -155,7 +160,7 @@ def replaceOutliers(frame: pd.DataFrame, targetPath: str, toReplace: list[str], 
 
 if __name__ == '__main__':
 
-    DATASETS_ROOT_PATH = './datasets/test'
+    DATASETS_ROOT_PATH = './datasets/test2'
 
     CURRENT_SAMPLE_PATH = f'{DATASETS_ROOT_PATH}/currentSample'
     QUALITAS_PATH = f'{DATASETS_ROOT_PATH}/qualitas'
@@ -186,7 +191,7 @@ if __name__ == '__main__':
 
     '''
     # Generate metrics for the Qualitas Corpus (QC) dataset
-    generateDataset(frame, QUALITAS_PATH, TOOL_PATH, f'{QUALITAS_PATH}/dataset', type="qualitas")
+    generateDataset(frame, QUALITAS_PATH, SOURCEMETER_PATH, f'{QUALITAS_PATH}/dataset', type="qualitas")
     '''
 
     # Obtain a current sample from Github
@@ -213,5 +218,6 @@ if __name__ == '__main__':
     # Generate metrics for the updated version of the Qualitas
     duration = generateDataset(frame, QUALITAS_UPDATED_PATH, SOURCEMETER_PATH, REPO_DOWNLOAD_PATH)
     util.writeTxtFile(EXECUTION_REPORT_PATH, f'Execution duration - Qualitas Corpus update metric generation: {duration}')
+
 
 
