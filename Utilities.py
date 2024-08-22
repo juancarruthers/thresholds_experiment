@@ -1,3 +1,4 @@
+import json
 import shutil
 import stat
 import pandas as pd
@@ -82,12 +83,18 @@ class Utilities:
         try:
             if reqType == "POST":
                 response = requests.post(url, json=query, headers=headers, timeout=120)
-                if response.status_code >= 400:
-                    return {'errors': {'message': 'GITHUB: We had issues producing the response to your request!'}}, False
-                else:
-                    response = response.json()
-
+                resStatus = response.status_code
+                response = response.json()
                 condition: bool | list = response.get("errors", False)
+
+                if resStatus >= 400:
+                    print(condition[0])
+                    if "This may be the result of a timeout, or it could be a GitHub bug." in condition[0]['message']:
+                        pageSize: int = query['variables']['first']
+                        query['variables']['first'] = pageSize // 2
+
+                    return self._requestCondition(query, reqType, url, headers)
+
                 if condition:
                     if 'type' in condition[0]:
                         if condition[0]['type'] == 'NOT_FOUND': return response, False
@@ -107,18 +114,19 @@ class Utilities:
             print(err)
             exit()
 
-    def deleteFolder(self, folder):
+
+    def deleteFolder(self, folder, errorFile = ""):
         try:
+            if (os.path.isfile(errorFile)):
+                os.chmod(errorFile, stat.S_IWUSR | stat.S_IREAD)
             if os.path.exists(folder):
                 shutil.rmtree(folder)
 
         except PermissionError as error:
-            if error.errno == 13:
-                if (os.path.isfile(error.filename)):
-                    os.chmod(error.filename, stat.S_IWUSR | stat.S_IREAD)
-                self.deleteFolder(folder)
-            else:
-                print(error)
+            self.deleteFolder(folder, error.filename)
+        except OSError:
+            pass
+
 
     def excludeTestFilesMeasures(self, dataset: pd.DataFrame):
         dataset = dataset[dataset['LOC'] > 0]
