@@ -1,4 +1,4 @@
-# Building and updating software datasets: an empirical assessment
+# Temporal validity of software datasets for code metrics: an empirical assessment of sampling strategies
 
 This is the repository for the scripts developed for the study "Building and updating software datasets: an empirical assessment".
 
